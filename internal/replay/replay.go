@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/AddysEdge/deployguard/internal/config"
@@ -65,6 +66,7 @@ type Target struct {
 	Name   string
 	Origin *url.URL
 	client *http.Client
+	issued atomic.Int64
 }
 
 // NewTarget creates a target whose transport keeps up to maxConns idle
@@ -85,6 +87,9 @@ func NewTarget(name string, origin *url.URL, maxConns int) *Target {
 		},
 	}
 }
+
+// Issued returns how many requests this target has sent.
+func (t *Target) Issued() int64 { return t.issued.Load() }
 
 // Close releases idle connections.
 func (t *Target) Close() { t.client.CloseIdleConnections() }
@@ -136,6 +141,7 @@ func (t *Target) Do(ctx context.Context, req Request, keepBody bool) Response {
 		hr.Header.Set(h.Name, h.Value())
 	}
 
+	t.issued.Add(1)
 	start := time.Now()
 	resp, err := t.client.Do(hr)
 	if err != nil {
