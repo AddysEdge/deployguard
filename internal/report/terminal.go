@@ -80,7 +80,13 @@ func printFindings(p func(string, ...any), prefix string, fs []compare.Finding, 
 				where = "(document root)"
 			}
 		}
-		p("               %s%-4s %-20s %s %s -> %s", prefix, f.Severity, f.Category, where, f.Baseline, f.Candidate)
+		if prefix != "" {
+			// Instability lists describe why a scenario was judged, not a
+			// per-finding severity, so no severity label is printed.
+			p("               %s%-20s %s %s -> %s", prefix, f.Category, where, f.Baseline, f.Candidate)
+			continue
+		}
+		p("               %-4s %-20s %s %s -> %s", f.Severity, f.Category, where, f.Baseline, f.Candidate)
 	}
 	if omitted > 0 {
 		p("               ... %d more finding(s) in the JSON report", omitted)

@@ -1,0 +1,49 @@
+name: Release gate (example)
+
+# A genuine DeployGuard release gate against local fixture services.
+#
+# - On push to main it gates the CLEAN fixture candidate, which should pass.
+# - Run it manually (Actions -> "Release gate (example)" -> Run workflow) and
+#   choose "regressed" to watch DeployGuard block the release: the gate step
+#   exits 1, the job fails, and the report is still uploaded.
+#
+# The logic lives in scripts/release-gate.sh so any CI system can reuse it.
+# There is deliberately no continue-on-error: a FAIL (exit 1) or INCONCLUSIVE
+# (exit 2) verdict fails this workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Fixture candidate to gate (clean should pass; regressed must be blocked)
+        type: choice
+        options: [clean, regressed]
+        default: clean
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Run DeployGuard release gate
+        env:
+          DG_CANDIDATE_VARIANT: ${{ inputs.candidate || 'clean' }}
+          DG_REPORT: reports/release-gate.json
+        run: bash scripts/release-gate.sh
+
+      - name: Upload DeployGuard report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deployguard-release-gate-report
+          path: reports/release-gate.json
+          if-no-files-found: error
