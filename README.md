@@ -338,7 +338,7 @@ This is a check of a **small seeded suite with known answers**, built to show th
 
 ## CI integration
 
-Two GitHub Actions workflows are included. Both pass [actionlint](https://github.com/rhysd/actionlint) locally. Their commands were executed locally on Windows/Git Bash and the Go toolchain; they have **not** yet run on hosted GitHub runners, because this repository has not been pushed.
+Two GitHub Actions workflows are included. Both pass [actionlint](https://github.com/rhysd/actionlint). Both have also passed on GitHub-hosted runners: the first push to `main` on 2026-10-06 ran CI (Ubuntu including `-race`, plus Windows) and the clean-candidate release gate. The `regressed` manual run is the way to see the gate fail.
 
 **[`.github/workflows/ci.yml`](.github/workflows/ci.yml)** runs on push and pull request:
 
@@ -384,7 +384,6 @@ To gate a real service in any CI, run `deployguard compare` against your deploye
 - Two functional observations per target catch volatile fields and flapping responses but not rare intermittent failures.
 - The latency gate is a two-round operational threshold on p95 from a single client machine. It is not a statistical test or a load test.
 - JSON with duplicate keys, or numbers with exponents beyond ±10^9, is treated as malformed.
-- The CI workflows have been validated with actionlint and their commands run locally, but they have not yet run on GitHub-hosted runners.
 
 ## Roadmap
 
