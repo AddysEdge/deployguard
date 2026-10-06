@@ -1,0 +1,25 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Generated reports and evaluation output
+/reports/
+*.report.json
+
+# Local secrets and environment files
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
