@@ -89,7 +89,7 @@ func printTable(w io.Writer, res *eval.Result) {
 		if !c.Match {
 			match = "NO"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.1fs\n", c.ID, c.Title, c.Kind, c.Expected, c.Observed, match, c.Classification, c.DurationMs/1000)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.0fms\n", c.ID, c.Title, c.Kind, c.Expected, c.Observed, match, c.Classification, c.DurationMs)
 	}
 	tw.Flush()
 
