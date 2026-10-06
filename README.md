@@ -12,16 +12,16 @@ FAIL         get-user         GET /api/users/42
 ...
 FAIL         search           GET /api/search
   behavior     PASS         candidate matched baseline (status 200, application/json)
-  performance  FAIL         regression repeated in all 2 rounds (gate: fail)
-               round 1 baseline->candidate  p95 1.4ms -> 142.4ms  delta +141.0ms (+10291.5%)  n=100/100 ok, errors 0/0  [breach]
-               round 2 candidate->baseline  p95 11.9ms -> 125.2ms  delta +113.4ms (+956.8%)  n=100/100 ok, errors 0/0  [breach]
+  performance  FAIL         p95 latency regression repeated in all 2 rounds (gate: fail)
+               round 1 baseline->candidate  p95 2.5ms -> 123.5ms  delta +121.0ms (+4798.1%)  n=100/100 ok, errors 0/0  [breach]
+               round 2 candidate->baseline  p95 5.2ms -> 129.4ms  delta +124.2ms (+2384.5%)  n=100/100 ok, errors 0/0  [breach]
 
 Result: FAIL (exit code 1)
 ```
 
 ### What it is not
 
-DeployGuard is deliberately narrow. It is **not** an AI PR reviewer, a Postman clone, a dashboard, a distributed job platform, or a general load tester. It does not capture or replay production traffic, send request bodies, follow redirects, retry failures, or store history.
+DeployGuard is deliberately narrow. It is **not** an AI PR reviewer, a Postman clone, a dashboard, a distributed job platform, or a general load tester. It does not capture or replay production traffic, send request bodies, follow redirects, retry failed exchanges at the application level, or store history.
 
 Traffic replay and response diffing are established ideas, and DeployGuard did not invent them. [Speedscale](https://speedscale.com/) replays captured traffic, [Postman](https://www.postman.com/) runs request collections and assertions, Twitter's [Diffy](https://github.com/opendiffy/diffy) compares a candidate against two instances of the primary to filter noise, and [k6](https://grafana.com/docs/k6/latest/) does load testing. DeployGuard's contribution is a small, inspectable implementation of one core: a baseline-versus-candidate comparison with strict safety limits, a semantic JSON comparator, honest handling of untrustworthy baselines, a two-round latency gate, and a precise CI exit-code contract.
 
@@ -96,6 +96,7 @@ deployguard help [compare|validate]
 
 - `--baseline` and `--candidate` are **required command-line arguments** and are never read from the workload. The same workload can therefore be pointed at any pair of environments, and a workload file cannot quietly carry a production destination.
 - Both URLs must be `http`/`https` origins: a scheme and host with an optional port. A path (other than `/`), query, fragment or `user:password@` is rejected, and errors never echo the URL.
+- The two origins must **differ**. They are compared after normalization (lowercased scheme and hostname, effective port), so `http://example.test` and `http://EXAMPLE.test:80` are the same origin. Equivalent origins are rejected with exit `3` before the workload is loaded or any request is sent, because comparing a release with itself would PASS without testing anything. No DNS resolution is done: different hostnames (or distinct ports on one host) are accepted even if they reach the same service.
 - `validate` decodes and validates the workload and resolves `${ENV}` header references without sending any request.
 - The human-readable summary goes to **stdout**. Structured logs (`log/slog`, carrying `run_id`, `phase` and `scenario` attributes) go to **stderr**. The JSON report goes only to the `--report` file, so the streams never mix.
 
@@ -157,7 +158,7 @@ scenarios:                       # required, 1-200 entries
 | `performance.gate` | `warn` | `warn` or `fail` |
 | config file size | n/a | at most 1 MiB |
 
-Fixed (not configurable) in v1: **2** functional observations per target per scenario; **2** measured performance rounds; up to 100 findings kept per comparison (8 printed per scenario, all in the report); JSON nesting up to 512 levels.
+Fixed (not configurable) in v1: **2** functional observations per target per scenario; **2** measured performance rounds; up to 100 findings **retained** per comparison (see [Finding cap](#finding-cap)); up to 8 printed per scenario in the terminal; JSON nesting up to 512 levels.
 
 **Planned requests** per scenario are `4 + (performance ? 2 rounds x 2 targets x (warmup + samples) : 0)`. The workload is rejected if the total exceeds `max_total_requests`, so a typo such as `samples: 50000` cannot turn into an accidental load test.
 
@@ -209,7 +210,7 @@ Each scenario takes four functional observations in the interleaved order **base
 3. The two baseline observations differ after ignore rules: **INCONCLUSIVE** (baseline instability, with the differing paths listed). One volatile response is never treated as the contract.
 4. The same problems as rule 2 on the **candidate**, against a healthy baseline: **FAIL**.
 5. The two candidate observations differ while the baseline was stable: **FAIL** (candidate instability).
-6. Otherwise the first baseline and candidate observations are compared. Removed fields, type changes, changed values, array length changes, status, media type and Location changes, and non-JSON body changes are **FAIL**. Added fields are **WARN**, or **FAIL** with `strict_additions: true`.
+6. Otherwise the first baseline and candidate observations are compared. Removed fields, type changes, changed values, array length changes, status, media type and Location changes, and non-JSON body changes are **FAIL**. Added fields are **WARN**, or **FAIL** with `strict_additions: true`. The outcome is the worst severity over **every** discovered difference, including differences beyond the [finding cap](#finding-cap).
 
 Performance is measured only when the behavior is PASS or WARN. A behavioral FAIL or INCONCLUSIVE skips it and says why, rather than adding traffic or issuing a misleading latency verdict.
 
@@ -256,7 +257,16 @@ Performance is **opt-in per scenario** and runs only after the functional phase,
    - any baseline error (warm-up or measured) in any round: the performance result is **INCONCLUSIVE**;
    - any candidate error in a round: that round is *errored*. Its latency is **not** judged from the successful subset;
    - otherwise the round **breaches** only if candidate p95 exceeds baseline p95 by **more than `p95_absolute_ms` AND more than `p95_relative_pct`**.
-7. **Decision.** Both rounds breached or errored: apply `gate` (`warn` by default, `fail` to block). Exactly one round: **WARN** (a suspected, non-repeatable change). Neither: **PASS**.
+7. **Decision.** The gate applies only when the **same** signal repeats:
+
+   | Round signals | Performance outcome |
+   |---|---|
+   | latency breach in both rounds | `gate` (`warn` by default, `fail` to block) |
+   | candidate-only errors in both rounds | `gate` |
+   | one latency breach + one candidate-error round (either order) | **WARN**, explaining both anomalies; neither signal repeated |
+   | one bad round + one clean round | **WARN** (suspected, non-repeatable) |
+   | both rounds clean | **PASS** |
+   | baseline errors in any round, or incomplete measurement | **INCONCLUSIVE** |
 
 Both thresholds are required because each alone is misleading on a fast endpoint. In the measured run below, the clean fixture's `/api/search` showed a +1.22 ms p95 difference in round 1, which is about +235% relative, from loopback noise alone. The absolute threshold prevents that from becoming a regression. On a slow endpoint, a large absolute jitter can be a small relative change, which the relative threshold handles.
 
@@ -268,14 +278,34 @@ Both thresholds are required because each alone is misleading on a fast endpoint
 
 `--report FILE` writes indented JSON with `"schema_version": 1`. Parent directories are created, and the file is written to a temporary file and renamed into place, so readers never see a partial report. Field order and finding order are deterministic.
 
-Top level: `schema_version`, `tool` (name, version), `run` (id, started/finished time, duration, `canceled`, config path and version, baseline and candidate origins, planned and issued request counts), `settings` (effective non-secret limits), `outcome`, `exit_code`, `summary` (counts per outcome), `reasons`, and `scenarios[]`.
+Top level: `schema_version`, `tool` (name, version), `run` (id, started/finished time, duration, `canceled`, config path and version, baseline and candidate origins, `planned_requests`, `issued_requests`), `settings` (effective non-secret limits), `outcome`, `exit_code`, `summary` (counts per outcome), `reasons`, and `scenarios[]`.
 
-Each scenario has `name`, `method`, `path`, `query`, `outcome`, plus:
+`issued_requests` counts **logical exchanges** DeployGuard made, one per request it asked the HTTP client to perform, successful or not. It is not a guaranteed count of wire-level attempts (see [Security and privacy](#security-and-privacy) on transport-level retries).
 
-- `behavior`: `outcome`, `reasons`, `expect_status`, `strict_additions`, `observations[]` (sequence, target, status, media type, redacted Location, body size, duration, typed `error`), `findings[]` (`category`, `path`, `severity`, safe `baseline`/`candidate` descriptions), `findings_omitted`, `baseline_instability[]`, `candidate_instability[]`, and `ignore_rules[]` (`path`, `status`, `suppressed`, `note`).
+Each scenario has `name`, `method`, `path`, `query` (parameter names with every value redacted), `outcome`, plus:
+
+- `behavior`: `outcome`, `reasons`, `expect_status`, `strict_additions`, `observations[]` (sequence, target, status, media type, redacted Location, body size, duration, typed `error`), `findings[]` (the **retained** findings: `category`, `path`, `severity`, safe `baseline`/`candidate` descriptions), `findings_omitted`, `finding_counts` (`total`, `fail`, `warn`, `retained`, `omitted`, `omitted_fail`, `omitted_warn`), `baseline_instability[]` / `baseline_instability_omitted`, `candidate_instability[]` / `candidate_instability_omitted`, and `ignore_rules[]` (`path`, `status`, `suppressed`, `note`).
 - `performance`: `outcome`, `reasons`, `policy` (rounds, warm-up, samples, concurrency, thresholds, gate, percentile method, valid status), `rounds[]` (order; per target warm-up attempts and errors, attempts, successes, transport and status errors, `error_kinds`, `p50_ms`, `p95_ms`, `wall_ms`; delta in ms and %; `status`: `ok`, `breach`, `candidate_errors`, `baseline_errors` or `incomplete`) and an informational `aggregate`.
 
-The report never contains request headers, resolved environment variables or response bodies.
+### Finding cap
+
+At most **100 findings are retained** per comparison to keep reports bounded. The cap limits what is *listed*, never the verdict: every discovered difference is counted in `finding_counts` by severity, and the behavioral outcome is derived from those counts. A FAIL found after 100 WARNs is still a FAIL with exit `1`. When the cap is reached, FAIL findings are retained in preference to WARN findings (a later FAIL displaces a retained WARN), so blocking evidence is listed whenever there are at most 100 FAILs. Retained findings are sorted deterministically: status, media type and Location first, then by JSON Pointer path and category. Omitted findings are **not** in the report; only their counts are (`findings_omitted`, `finding_counts.omitted_fail`, `finding_counts.omitted_warn`). The terminal prints up to 8 retained findings per scenario and states how many more are retained in the report and how many were not retained at all.
+
+### What is and is not redacted
+
+Never written to the report, terminal output or logs:
+
+- request header values, including resolved `${ENV}` secrets (the report lists no request headers at all);
+- **query parameter values**, which are replaced by `"<redacted>"` while parameter names and value counts are kept (`{"token": ["<redacted>"]}`). The real values are still sent to both targets;
+- query values inside redirect `Location` displays (`/next?<redacted>`);
+- response bodies and scalar values from them (findings carry JSON types, sizes and digests).
+
+**Not** redacted, and printed as-is:
+
+- scenario names and **URL paths**, including any data embedded in path segments (e.g. `/users/alice@example.com`). Do not put secrets or personal data in paths;
+- the path portion of redirect `Location` headers, and cross-origin redirect hosts;
+- JSON Pointer paths in findings, which contain **response object keys** (an API that uses data as keys exposes those keys);
+- the baseline and candidate origins (credentials in URLs are rejected), and hostnames or IPs that appear in transport error messages.
 
 ---
 
@@ -366,10 +396,11 @@ To gate a real service in any CI, run `deployguard compare` against your deploye
 ## Security and privacy
 
 - **Target controlled environments only** (staging, previews, fixtures). GET and HEAD are the only methods, but a poorly designed API can still change state on GET. Never aim DeployGuard at production, and never at a system you are not authorized to test.
-- No request bodies, no captured traffic, no automatic redirects (cross-origin Locations are never requested) and **no automatic retries**, which could mask regressions.
+- No request bodies, no captured traffic, and no automatic redirects (cross-origin Locations are never requested).
+- **No application-level retries:** DeployGuard has no retry loop, because retries could mask regressions. However, it reuses connections through Go's standard `net/http` Transport, which (per the [`net/http` documentation](https://pkg.go.dev/net/http#Transport)) may itself retry an idempotent request (GET and HEAD qualify) when a network error occurs on a connection that was already used successfully, typically a keep-alive connection the server closed. DeployGuard keeps connection reuse because it makes latency measurement realistic. The cost is that a failure on a reused connection can be silently absorbed by that transport retry, so DeployGuard is weaker at detecting some intermittent connection-level failures. One observation is one logical exchange, not a guaranteed single wire attempt.
 - **TLS verification always uses the system trust store.** There is no insecure-skip-verify option in v1. Standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables are honored by Go's HTTP transport.
 - **Secrets:** credentials belong in environment variables referenced as `${NAME}` in header values. URLs with `user:password@` are rejected. Resolved values are kept in an unexported field whose `String`/`GoString` methods redact it, and they never appear in errors, logs, terminal output or the report. The E2E tests check stdout, stderr (at debug log level) and the report for a planted secret.
-- **No raw headers or bodies are logged or reported.** Findings carry JSON types, sizes and digests, not values. Redirect Locations are shown with query values redacted. Transport errors omit the request URL.
+- **No raw headers or bodies are logged or reported, and query values are redacted.** Findings carry JSON types, sizes and digests, not values. Transport errors omit the request URL. See [What is and is not redacted](#what-is-and-is-not-redacted) for the exact boundary; URL paths are **not** redacted. The E2E tests plant a secret query value and confirm it reaches both targets but appears in neither stdout, stderr nor the report.
 - Sensitive header names (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, and names containing `api-key`, `token`, `secret`, `session`, `password` or `credential`) are flagged as sensitive in addition to any `${ENV}`-interpolated header.
 - Bounded everything: per-request deadlines, response bytes, in-flight requests, samples and total planned requests.
 
@@ -381,7 +412,9 @@ To gate a real service in any CI, run `deployguard compare` against your deploye
 - Ignore rules are exact pointers; there are no wildcards, so each array element is listed by index. Arrays are always order-sensitive.
 - Media type parameters (including charset) are not compared. Response headers other than Content-Type and Location are not compared.
 - Findings deliberately omit values. To see *what* a value changed to, reproduce the request yourself.
-- Two functional observations per target catch volatile fields and flapping responses but not rare intermittent failures.
+- Two functional observations per target catch volatile fields and flapping responses but not rare intermittent failures. Go's transport-level retry on reused connections can also absorb some connection failures.
+- Only the first 100 findings per comparison are listed (FAILs preferred); further differences are counted, not listed.
+- URL paths, redirect Location paths and response object keys (in finding paths) are printed and reported unredacted.
 - The latency gate is a two-round operational threshold on p95 from a single client machine. It is not a statistical test or a load test.
 - JSON with duplicate keys, or numbers with exponents beyond ±10^9, is treated as malformed.
 

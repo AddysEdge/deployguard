@@ -258,22 +258,115 @@ func mustURL(t *testing.T, s string) *url.URL {
 	return u
 }
 
-func TestMaxFindingsCap(t *testing.T) {
-	var b, c strings.Builder
+// object renders a JSON object from ordered key/value fragments.
+func object(pairs ...string) string {
+	var b strings.Builder
 	b.WriteString("{")
-	c.WriteString("{")
-	for i := 0; i < 150; i++ {
+	for i := 0; i+1 < len(pairs); i += 2 {
 		if i > 0 {
 			b.WriteString(",")
-			c.WriteString(",")
 		}
-		fmt.Fprintf(&b, `"k%03d":1`, i)
-		fmt.Fprintf(&c, `"k%03d":2`, i)
+		fmt.Fprintf(&b, "%q:%s", pairs[i], pairs[i+1])
 	}
 	b.WriteString("}")
-	c.WriteString("}")
-	res := Compare(mustJSON(t, b.String()), mustJSON(t, c.String()), Options{})
-	if len(res.Findings) != DefaultMaxFindings || res.Omitted != 50 {
-		t.Fatalf("findings=%d omitted=%d", len(res.Findings), res.Omitted)
+	return b.String()
+}
+
+// keys returns n key/value pairs prefix000..prefix(n-1) with the given value.
+func keys(prefix string, n int, value string) []string {
+	var out []string
+	for i := 0; i < n; i++ {
+		out = append(out, fmt.Sprintf("%s%03d", prefix, i), value)
+	}
+	return out
+}
+
+// TestFindingCapNeverChangesVerdict guards the release-gate invariant: the
+// cap limits retained findings, never the outcome or the counts.
+func TestFindingCapNeverChangesVerdict(t *testing.T) {
+	tests := []struct {
+		name         string
+		base, cand   string
+		want         verdict.Outcome
+		counts       Counts
+		retainedFail int
+	}{
+		{
+			// Keys sort a000..a099 then z: 100 WARN additions are discovered
+			// before the FAIL removal of /z.
+			name:         "100 added-field WARNs then a removed-field FAIL",
+			base:         object("z", "1"),
+			cand:         object(keys("a", 100, "1")...),
+			want:         verdict.Fail,
+			counts:       Counts{Total: 101, Fail: 1, Warn: 100, Retained: 100, Omitted: 1, OmittedWarn: 1},
+			retainedFail: 1,
+		},
+		{
+			name:   "more than 100 WARNs and no FAIL",
+			base:   object("id", "1"),
+			cand:   object(append([]string{"id", "1"}, keys("b", 150, "1")...)...),
+			want:   verdict.Warn,
+			counts: Counts{Total: 150, Warn: 150, Retained: 100, Omitted: 50, OmittedWarn: 50},
+		},
+		{
+			// /a type change (FAIL) before the cap, 100 additions, /z removal (FAIL) after it.
+			name:         "FAILs before and after the cap",
+			base:         object("a", "1", "z", "1"),
+			cand:         object(append([]string{"a", `"1"`}, keys("b", 100, "1")...)...),
+			want:         verdict.Fail,
+			counts:       Counts{Total: 102, Fail: 2, Warn: 100, Retained: 100, Omitted: 2, OmittedWarn: 2},
+			retainedFail: 2,
+		},
+		{
+			name:         "more FAILs than the cap",
+			base:         object(keys("k", 150, "1")...),
+			cand:         object(keys("k", 150, "2")...),
+			want:         verdict.Fail,
+			counts:       Counts{Total: 150, Fail: 150, Retained: 100, Omitted: 50, OmittedFail: 50},
+			retainedFail: 100,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Compare(mustJSON(t, tt.base), mustJSON(t, tt.cand), Options{})
+			if got := res.Outcome(); got != tt.want {
+				t.Fatalf("outcome = %s, want %s (counts %+v)", got, tt.want, res.Counts)
+			}
+			if res.Counts != tt.counts {
+				t.Fatalf("counts = %+v, want %+v", res.Counts, tt.counts)
+			}
+			if len(res.Findings) != tt.counts.Retained || res.Omitted != tt.counts.Omitted {
+				t.Fatalf("retained %d omitted %d disagree with counts %+v", len(res.Findings), res.Omitted, res.Counts)
+			}
+			fails := 0
+			for _, f := range res.Findings {
+				if f.Severity == verdict.Fail {
+					fails++
+				}
+			}
+			if fails != tt.retainedFail {
+				t.Fatalf("retained %d FAIL findings, want %d (FAILs are retained in preference to WARNs)", fails, tt.retainedFail)
+			}
+		})
+	}
+}
+
+func TestRetainedFindingsAreDeterministic(t *testing.T) {
+	base := object("a", "1", "z", "1")
+	cand := object(append([]string{"a", `"1"`}, keys("b", 120, "1")...)...)
+	first := Compare(mustJSON(t, base), mustJSON(t, cand), Options{})
+	for i := 0; i < 5; i++ {
+		again := Compare(mustJSON(t, base), mustJSON(t, cand), Options{})
+		if summarize(again.Findings) != summarize(first.Findings) || again.Counts != first.Counts {
+			t.Fatal("retained findings differ between identical comparisons")
+		}
+	}
+	for i := 1; i < len(first.Findings); i++ {
+		if first.Findings[i-1].Path > first.Findings[i].Path {
+			t.Fatalf("retained findings not sorted by path at %d: %s > %s", i, first.Findings[i-1].Path, first.Findings[i].Path)
+		}
+	}
+	if first.Findings[0].Path != "/a" || first.Findings[len(first.Findings)-1].Path != "/z" {
+		t.Fatalf("both FAIL findings should be retained: first %s last %s", first.Findings[0].Path, first.Findings[len(first.Findings)-1].Path)
 	}
 }

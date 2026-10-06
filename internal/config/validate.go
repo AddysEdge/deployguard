@@ -295,6 +295,27 @@ func ValidatePointer(p string) error {
 	return nil
 }
 
+// OriginKey normalizes an http(s) URL's origin for equality checks: lowercased
+// scheme and hostname plus the effective port (80/443 when omitted). It does
+// no DNS resolution, so different hostnames are always different origins.
+func OriginKey(u *url.URL) string {
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	if port == "" {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+	return scheme + "://" + strings.ToLower(u.Hostname()) + ":" + port
+}
+
+// EquivalentOrigins reports whether two origins are the same after
+// normalization, e.g. http://example.test and http://EXAMPLE.test:80.
+func EquivalentOrigins(a, b *url.URL) bool { return OriginKey(a) == OriginKey(b) }
+
 // ParseOrigin validates a baseline or candidate URL. Only http(s) origins are
 // accepted: no userinfo, query, fragment or path other than "/". The error
 // never echoes the input, which could contain credentials.

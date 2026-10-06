@@ -217,25 +217,34 @@ func Decide(rounds []Round, p config.Performance) (verdict.Outcome, []string) {
 	if len(reasons) > 0 {
 		return verdict.Inconclusive, reasons
 	}
+	breaches, errored := 0, 0
 	for _, r := range rounds {
 		switch r.Status {
 		case RoundBreach:
+			breaches++
 			bad = append(bad, fmt.Sprintf("round %d: candidate p95 %.1fms vs baseline %.1fms (+%.1fms, %s) exceeds both thresholds (> %gms and > %g%%)",
 				r.Round, *r.Candidate.P95Ms, *r.Baseline.P95Ms, *r.DeltaP95Ms, fmtPct(r.DeltaP95Pct), p.P95AbsoluteMs, p.P95RelativePct))
 		case RoundCandidateErrors:
+			errored++
 			bad = append(bad, fmt.Sprintf("round %d: candidate had %d error(s) (%s) while the baseline had none; its latency is not judged from the successful subset",
 				r.Round, r.Candidate.Errors(), kinds(r.Candidate.ErrorKinds)))
 		}
 	}
-	switch len(bad) {
-	case 0:
+	// The gate applies only when the SAME signal repeats in every round.
+	gate := strings.ToLower(string(p.Gate))
+	switch {
+	case breaches == 0 && errored == 0:
 		var parts []string
 		for _, r := range rounds {
 			parts = append(parts, fmt.Sprintf("round %d %+.1fms (%s)", r.Round, *r.DeltaP95Ms, fmtPct(r.DeltaP95Pct)))
 		}
 		return verdict.Pass, []string{"candidate p95 within thresholds in every round: " + strings.Join(parts, ", ")}
-	case len(rounds):
-		return p.Gate, append([]string{fmt.Sprintf("regression repeated in all %d rounds (gate: %s)", len(rounds), strings.ToLower(string(p.Gate)))}, bad...)
+	case breaches == len(rounds):
+		return p.Gate, append([]string{fmt.Sprintf("p95 latency regression repeated in all %d rounds (gate: %s)", len(rounds), gate)}, bad...)
+	case errored == len(rounds):
+		return p.Gate, append([]string{fmt.Sprintf("candidate-only errors repeated in all %d rounds (gate: %s)", len(rounds), gate)}, bad...)
+	case breaches > 0 && errored > 0:
+		return verdict.Warn, append([]string{"mixed signals: one round breached the latency thresholds and another had candidate errors; neither signal repeated, so this is reported as WARN"}, bad...)
 	default:
 		return verdict.Warn, append([]string{"suspected, non-repeatable regression: only one round exceeded the gate, so it is reported as WARN"}, bad...)
 	}

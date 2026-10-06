@@ -75,6 +75,8 @@ Required:
   --baseline URL     origin of the current release, e.g. http://127.0.0.1:8080
   --candidate URL    origin of the candidate release, e.g. http://127.0.0.1:8081
                      URLs must be http(s) origins: no path, query, fragment or credentials.
+                     The two origins must differ (scheme, host or effective port);
+                     http://example.test and http://EXAMPLE.test:80 are the same origin.
 
 Optional:
   --report FILE      write the versioned JSON report here (directories are created).
@@ -176,6 +178,12 @@ func runCompare(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if err != nil {
 		problems = append(problems, err.Error())
 	}
+	if baseline != nil && candidate != nil && config.EquivalentOrigins(baseline, candidate) {
+		// Origins never contain credentials (ParseOrigin rejects userinfo), so
+		// the normalized origin is safe to print.
+		problems = append(problems, fmt.Sprintf("--baseline and --candidate are the same origin (%s); comparing a release with itself cannot detect regressions, so no requests were sent. Use two different origins (a different host or port)",
+			config.OriginKey(baseline)))
+	}
 	logger, err := newLogger(stderr, *logLevel, *logFormat)
 	if err != nil {
 		problems = append(problems, err.Error())
@@ -190,10 +198,6 @@ func runCompare(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		fmt.Fprintf(stderr, "deployguard compare: %v\n", err)
 		return verdict.ExitError
 	}
-	if baseline.String() == candidate.String() {
-		logger.Warn("baseline and candidate are the same origin; differences between releases cannot be detected")
-	}
-
 	runID := engine.NewRunID()
 	logger.Info("run started", "run_id", runID, "config", *cfgPath, "scenarios", len(cfg.Scenarios),
 		"planned_requests", cfg.PlannedRequests(), "baseline", baseline.String(), "candidate", candidate.String())

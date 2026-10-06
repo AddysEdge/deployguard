@@ -55,9 +55,11 @@ func renderBehavior(p func(string, ...any), b Behavior) {
 	for _, reason := range b.Reasons[min(1, len(b.Reasons)):] {
 		p("                            %s", reason)
 	}
-	printFindings(p, "", b.Findings, b.FindingsOmitted)
-	printFindings(p, "baseline instability: ", b.BaselineInstability, 0)
-	printFindings(p, "candidate instability: ", b.CandidateInstability, 0)
+	c := b.FindingCounts
+	printFindings(p, "", b.Findings, b.FindingsOmitted,
+		fmt.Sprintf(" (%d FAIL, %d WARN); they are counted in the verdict", c.OmittedFail, c.OmittedWarn))
+	printFindings(p, "baseline instability: ", b.BaselineInstability, b.BaselineInstabilityOmitted, "")
+	printFindings(p, "candidate instability: ", b.CandidateInstability, b.CandidateInstabilityOmitted, "")
 	for _, ig := range b.IgnoreRules {
 		if ig.Status == "applied" {
 			p("               ignore %s: applied, suppressed %d difference(s)", ig.Path, ig.Suppressed)
@@ -67,10 +69,14 @@ func renderBehavior(p func(string, ...any), b Behavior) {
 	}
 }
 
-func printFindings(p func(string, ...any), prefix string, fs []compare.Finding, omitted int) {
+// printFindings prints up to maxFindingsShown retained findings, then says how
+// many more are retained in the JSON report and how many were not retained
+// at all (beyond the per-comparison cap; counted, but not listed anywhere).
+func printFindings(p func(string, ...any), prefix string, fs []compare.Finding, omitted int, omittedDetail string) {
+	hidden := 0
 	for i, f := range fs {
 		if i == maxFindingsShown {
-			omitted += len(fs) - i
+			hidden = len(fs) - i
 			break
 		}
 		where := ""
@@ -88,8 +94,12 @@ func printFindings(p func(string, ...any), prefix string, fs []compare.Finding, 
 		}
 		p("               %-4s %-20s %s %s -> %s", f.Severity, f.Category, where, f.Baseline, f.Candidate)
 	}
+	if hidden > 0 {
+		p("               ... %d more %sfinding(s) retained in the JSON report", hidden, prefix)
+	}
 	if omitted > 0 {
-		p("               ... %d more finding(s) in the JSON report", omitted)
+		p("               ... %d more %sfinding(s) not retained (cap of %d per comparison)%s",
+			omitted, prefix, compare.DefaultMaxFindings, omittedDetail)
 	}
 }
 
@@ -134,8 +144,18 @@ func Reason(s Scenario) string {
 	if s.Behavior.Outcome != verdict.Pass {
 		detail := ""
 		if len(s.Behavior.Findings) > 0 {
+			// Name the most severe findings first so the verdict line shows
+			// what actually blocks the release.
+			ordered := make([]compare.Finding, 0, len(s.Behavior.Findings))
+			for _, sev := range []verdict.Outcome{verdict.Fail, verdict.Warn} {
+				for _, f := range s.Behavior.Findings {
+					if f.Severity == sev {
+						ordered = append(ordered, f)
+					}
+				}
+			}
 			var cats []string
-			for i, f := range s.Behavior.Findings {
+			for i, f := range ordered {
 				if i == 3 {
 					cats = append(cats, "...")
 					break

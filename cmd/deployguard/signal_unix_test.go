@@ -27,9 +27,11 @@ func TestBinarySIGINT(t *testing.T) {
 		}
 	}))
 	defer slow.Close()
+	slow2 := httptest.NewServer(slow.Config.Handler) // a distinct origin with the same behavior
+	defer slow2.Close()
 
 	reportPath := filepath.Join(t.TempDir(), "sigint.json")
-	cmd := exec.Command(binPath, "compare", "--config", example("deployguard.yaml"), "--baseline", slow.URL, "--candidate", slow.URL, "--report", reportPath)
+	cmd := exec.Command(binPath, "compare", "--config", example("deployguard.yaml"), "--baseline", slow.URL, "--candidate", slow2.URL, "--report", reportPath)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

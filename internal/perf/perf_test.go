@@ -159,7 +159,14 @@ func TestDecide(t *testing.T) {
 		{"breach second round only", []Round{ok(1, failGate), breach(2, failGate)}, failGate, verdict.Warn, "non-repeatable"},
 		{"candidate errors both rounds", []Round{candErr(1, failGate), candErr(2, failGate)}, failGate, verdict.Fail, "timeout=2"},
 		{"candidate errors one round", []Round{candErr(1, failGate), ok(2, failGate)}, failGate, verdict.Warn, "non-repeatable"},
-		{"errors then breach", []Round{candErr(1, failGate), breach(2, failGate)}, failGate, verdict.Fail, "repeated"},
+		// One latency breach plus one candidate-error round: neither signal
+		// repeated, so the gate does not apply, in either order.
+		{"errors then breach", []Round{candErr(1, failGate), breach(2, failGate)}, failGate, verdict.Warn, "mixed signals"},
+		{"breach then errors", []Round{breach(1, failGate), candErr(2, failGate)}, failGate, verdict.Warn, "mixed signals"},
+		{"mixed signals explain both anomalies", []Round{breach(1, failGate), candErr(2, failGate)}, failGate, verdict.Warn, "timeout=2"},
+		{"mixed signals name the breach", []Round{candErr(1, failGate), breach(2, failGate)}, failGate, verdict.Warn, "exceeds both thresholds"},
+		{"candidate errors both rounds, warn gate", []Round{candErr(1, warnGate), candErr(2, warnGate)}, warnGate, verdict.Warn, "candidate-only errors repeated"},
+		{"breach both rounds names latency", []Round{breach(1, failGate), breach(2, failGate)}, failGate, verdict.Fail, "p95 latency regression repeated"},
 		{"baseline errors", []Round{baseErr(1, failGate), breach(2, failGate)}, failGate, verdict.Inconclusive, "baseline had 1 error"},
 	}
 	for _, tt := range tests {

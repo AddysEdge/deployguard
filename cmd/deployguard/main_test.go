@@ -204,17 +204,92 @@ func TestCLIReportWriteFailureIsConspicuous(t *testing.T) {
 }
 
 func TestCLISecretsAreSentButNeverPrinted(t *testing.T) {
-	const secret = "e2e-secret-7c1f9a"
-	var received atomic.Value
+	const secret = "e2e-secret-7c1f9a"    // header value, from the environment
+	const querySecret = "q-secret-5d2e8b" // literal query value in the workload
+	type seen struct{ auth, apiKey, token string }
 	handler := fixture.NewHandler(fixture.Options{Variant: fixture.Baseline})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Store(r.Header.Get("Authorization"))
-		handler.ServeHTTP(w, r)
-	}))
+	var got [2]atomic.Value
+	newServer := func(i int) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got[i].Store(seen{r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"), r.URL.Query().Get("token")})
+			if r.URL.Path == "/api/login-redirect" {
+				// Echo the secret into a same-origin Location query.
+				w.Header().Set("Location", "/api/next?token="+r.URL.Query().Get("token"))
+				w.WriteHeader(http.StatusFound)
+				return
+			}
+			handler.ServeHTTP(w, r)
+		}))
+	}
+	srv, srv2 := newServer(0), newServer(1)
 	defer srv.Close()
+	defer srv2.Close()
 
 	cfg := filepath.Join(t.TempDir(), "secret.yaml")
 	os.WriteFile(cfg, []byte(`version: 1
+scenarios:
+  - name: users
+    method: GET
+    path: /api/users/42
+    query:
+      token: `+querySecret+`
+      page: "2"
+    headers:
+      Authorization: "Bearer ${DG_E2E_TOKEN}"
+      X-Api-Key: "${DG_E2E_TOKEN}"
+  - name: login-redirect
+    method: GET
+    path: /api/login-redirect
+    query:
+      token: `+querySecret+`
+`), 0o600)
+	reportPath := filepath.Join(t.TempDir(), "r.json")
+	r := runBinary(t, []string{"DG_E2E_TOKEN=" + secret}, "compare", "--config", cfg, "--baseline", srv.URL, "--candidate", srv2.URL, "--report", reportPath, "--log-level", "debug")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s %s", r.code, r.stdout, r.stderr)
+	}
+	// The real requests carry the original values on both targets...
+	for i, name := range []string{"baseline", "candidate"} {
+		s, _ := got[i].Load().(seen)
+		if s.token != querySecret {
+			t.Fatalf("%s did not receive the original query value (got %q)", name, s.token)
+		}
+	}
+	// ...but no output stream or the report contains them.
+	data, _ := os.ReadFile(reportPath)
+	for where, s := range map[string]string{"stdout": r.stdout, "stderr": r.stderr, "report": string(data)} {
+		for _, planted := range []string{secret, querySecret} {
+			if strings.Contains(s, planted) {
+				t.Fatalf("planted secret %q leaked to %s", planted, where)
+			}
+		}
+	}
+	// Query parameter names and multiplicity are kept; values are redacted.
+	var rep struct {
+		Scenarios []struct {
+			Name     string              `json:"name"`
+			Query    map[string][]string `json:"query"`
+			Behavior struct {
+				Observations []struct {
+					Location string `json:"location"`
+				} `json:"observations"`
+			} `json:"behavior"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	q := rep.Scenarios[0].Query
+	if len(q) != 2 || len(q["token"]) != 1 || q["token"][0] != "<redacted>" || q["page"][0] != "<redacted>" {
+		t.Fatalf("report query should keep names and redact values: %v", q)
+	}
+	if loc := rep.Scenarios[1].Behavior.Observations[0].Location; loc != "/api/next?<redacted>" {
+		t.Fatalf("redirect Location display = %q", loc)
+	}
+	// Headers resolved from the environment are sent on the wire (checked in a
+	// single-scenario run so the last recorded request is unambiguous).
+	headerOnly := filepath.Join(t.TempDir(), "header.yaml")
+	os.WriteFile(headerOnly, []byte(`version: 1
 scenarios:
   - name: users
     method: GET
@@ -223,20 +298,16 @@ scenarios:
       Authorization: "Bearer ${DG_E2E_TOKEN}"
       X-Api-Key: "${DG_E2E_TOKEN}"
 `), 0o600)
-	reportPath := filepath.Join(t.TempDir(), "r.json")
-	r := runBinary(t, []string{"DG_E2E_TOKEN=" + secret}, "compare", "--config", cfg, "--baseline", srv.URL, "--candidate", srv.URL, "--report", reportPath, "--log-level", "debug")
-	if r.code != 0 {
-		t.Fatalf("exit %d: %s %s", r.code, r.stdout, r.stderr)
-	}
-	if got, _ := received.Load().(string); got != "Bearer "+secret {
-		t.Fatalf("server did not receive the resolved header (got %q)", got)
-	}
-	data, _ := os.ReadFile(reportPath)
-	for where, s := range map[string]string{"stdout": r.stdout, "stderr": r.stderr, "report": string(data)} {
-		if strings.Contains(s, secret) {
-			t.Fatalf("secret leaked to %s", where)
+	r = runBinary(t, []string{"DG_E2E_TOKEN=" + secret}, "compare", "--config", headerOnly, "--baseline", srv.URL, "--candidate", srv2.URL, "--log-level", "debug")
+	for i := range got {
+		if s, _ := got[i].Load().(seen); r.code != 0 || s.auth != "Bearer "+secret || s.apiKey != secret {
+			t.Fatalf("target %d did not receive resolved headers (exit %d, %+v)", i, r.code, s)
 		}
 	}
+	if strings.Contains(r.stdout+r.stderr, secret) {
+		t.Fatal("header secret leaked to output")
+	}
+	cfg = headerOnly
 
 	// A missing variable fails before any request is sent.
 	r = runBinary(t, []string{"DG_E2E_TOKEN="}, "validate", "--config", cfg)
@@ -273,6 +344,8 @@ func TestRunCanceledWritesReport(t *testing.T) {
 		}
 	}))
 	defer slow.Close()
+	slow2 := httptest.NewServer(slow.Config.Handler) // a distinct origin with the same behavior
+	defer slow2.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -283,7 +356,7 @@ func TestRunCanceledWritesReport(t *testing.T) {
 	}()
 	reportPath := filepath.Join(t.TempDir(), "canceled.json")
 	var stdout, stderr bytes.Buffer
-	code := run(ctx, []string{"compare", "--config", example("deployguard.yaml"), "--baseline", slow.URL, "--candidate", slow.URL, "--report", reportPath, "--log-level", "error"}, &stdout, &stderr)
+	code := run(ctx, []string{"compare", "--config", example("deployguard.yaml"), "--baseline", slow.URL, "--candidate", slow2.URL, "--report", reportPath, "--log-level", "error"}, &stdout, &stderr)
 	if code != 130 {
 		t.Fatalf("exit %d, want 130\n%s\n%s", code, stdout.String(), stderr.String())
 	}
@@ -291,5 +364,135 @@ func TestRunCanceledWritesReport(t *testing.T) {
 	run := rep["run"].(map[string]any)
 	if run["canceled"] != true || rep["outcome"] != "INCONCLUSIVE" || rep["exit_code"] != float64(130) {
 		t.Fatalf("canceled report: outcome=%v canceled=%v exit=%v", rep["outcome"], run["canceled"], rep["exit_code"])
+	}
+}
+
+// capServer serves /cap-fail (baseline {"z":1}; candidate 100 added fields
+// and no "z") and /cap-warn (candidate keeps "z" and adds 150 fields).
+func capServer(t *testing.T, candidate bool) string {
+	t.Helper()
+	added := func(n int, extra string) string {
+		var b strings.Builder
+		b.WriteString("{")
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `"a%03d":1`, i)
+		}
+		return b.String() + extra + "}"
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case !candidate:
+			fmt.Fprint(w, `{"z":1}`)
+		case r.URL.Path == "/cap-fail":
+			fmt.Fprint(w, added(100, ""))
+		default:
+			fmt.Fprint(w, added(150, `,"z":1`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestCLIFindingCapCannotHideFail(t *testing.T) {
+	baseline, candidate := capServer(t, false), capServer(t, true)
+	dir := t.TempDir()
+	write := func(name, path string) string {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte("version: 1\nscenarios: [{name: cap, method: GET, path: "+path+"}]\n"), 0o600)
+		return p
+	}
+	type counts struct {
+		Total, Fail, Warn, Retained, Omitted int
+		OmittedFail                          int `json:"omitted_fail"`
+		OmittedWarn                          int `json:"omitted_warn"`
+	}
+	type finding struct{ Category, Path, Severity string }
+	load := func(path string) (string, counts, []finding, int) {
+		var rep struct {
+			Outcome   string `json:"outcome"`
+			Scenarios []struct {
+				Behavior struct {
+					Findings        []finding `json:"findings"`
+					FindingsOmitted int       `json:"findings_omitted"`
+					FindingCounts   counts    `json:"finding_counts"`
+				} `json:"behavior"`
+			} `json:"scenarios"`
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(data, &rep) != nil {
+			t.Fatalf("unreadable report %s: %v", path, err)
+		}
+		b := rep.Scenarios[0].Behavior
+		return rep.Outcome, b.FindingCounts, b.Findings, b.FindingsOmitted
+	}
+
+	// 100 WARN additions sort before the FAIL removal of /z: must still exit 1.
+	failCfg := write("fail.yaml", "/cap-fail")
+	var first []finding
+	for run := 0; run < 2; run++ {
+		reportPath := filepath.Join(dir, fmt.Sprintf("fail-%d.json", run))
+		r := runBinary(t, nil, "compare", "--config", failCfg, "--baseline", baseline, "--candidate", candidate, "--report", reportPath)
+		if r.code != 1 {
+			t.Fatalf("exit %d, want 1: a FAIL beyond the finding cap must block\n%s", r.code, r.stdout)
+		}
+		outcome, c, fs, omitted := load(reportPath)
+		want := counts{Total: 101, Fail: 1, Warn: 100, Retained: 100, Omitted: 1, OmittedWarn: 1}
+		if outcome != "FAIL" || c != want || len(fs) != 100 || omitted != 1 {
+			t.Fatalf("outcome %s counts %+v retained %d omitted %d", outcome, c, len(fs), omitted)
+		}
+		if last := fs[len(fs)-1]; last.Path != "/z" || last.Severity != "FAIL" {
+			t.Fatalf("the blocking finding must be retained: last = %+v", last)
+		}
+		if run == 0 {
+			first = fs
+		} else if fmt.Sprint(fs) != fmt.Sprint(first) {
+			t.Fatal("retained findings are not deterministic across runs")
+		}
+		if !strings.Contains(r.stdout, "not retained (cap of 100 per comparison) (0 FAIL, 1 WARN)") || !strings.Contains(r.stdout, "cap FAIL: behavior FAIL: field_removed /z") {
+			t.Fatalf("terminal output should explain omitted findings and name the FAIL:\n%s", r.stdout)
+		}
+	}
+
+	// More than 100 WARNs and no FAIL: WARN, exit 0.
+	reportPath := filepath.Join(dir, "warn.json")
+	r := runBinary(t, nil, "compare", "--config", write("warn.yaml", "/cap-warn"), "--baseline", baseline, "--candidate", candidate, "--report", reportPath)
+	outcome, c, fs, _ := load(reportPath)
+	if r.code != 0 || outcome != "WARN" || c != (counts{Total: 150, Warn: 150, Retained: 100, Omitted: 50, OmittedWarn: 50}) || len(fs) != 100 {
+		t.Fatalf("exit %d outcome %s counts %+v", r.code, outcome, c)
+	}
+}
+
+func TestCLIRejectsEquivalentOrigins(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	cfg := example("deployguard.yaml")
+	for _, pair := range [][2]string{
+		{srv.URL, srv.URL},
+		{srv.URL, srv.URL + "/"},
+		{"http://example.test", "http://EXAMPLE.test:80"},
+		{"https://Example.Test", "https://example.test:443"},
+	} {
+		r := runBinary(t, nil, "compare", "--config", cfg, "--baseline", pair[0], "--candidate", pair[1])
+		if r.code != 3 || !strings.Contains(r.stderr, "are the same origin") || !strings.Contains(r.stderr, "no requests were sent") {
+			t.Fatalf("%v: exit %d stderr %s", pair, r.code, r.stderr)
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("%d request(s) were sent despite rejection", n)
+	}
+
+	// Distinct ports on the same host are different origins.
+	a, b := fixtureServer(t, fixture.Baseline), fixtureServer(t, fixture.Clean)
+	if r := runBinary(t, nil, "compare", "--config", example("eval/r1-removed-field.yaml"), "--baseline", a, "--candidate", b); r.code != 0 {
+		t.Fatalf("distinct ports should be accepted: exit %d %s", r.code, r.stderr)
+	}
+	// validate takes no origins and is unaffected.
+	if r := runBinary(t, nil, "validate", "--config", cfg); r.code != 0 {
+		t.Fatalf("validate: exit %d", r.code)
 	}
 }

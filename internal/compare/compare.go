@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AddysEdge/deployguard/internal/config"
 	"github.com/AddysEdge/deployguard/internal/verdict"
 )
 
@@ -57,24 +58,46 @@ type Options struct {
 	MaxFindings     int      // 0 means DefaultMaxFindings
 }
 
-// DefaultMaxFindings caps the findings kept per comparison.
+// DefaultMaxFindings caps the findings retained per comparison. The cap
+// limits report size only; it never changes the verdict (see Counts).
 const DefaultMaxFindings = 100
+
+// Counts tallies every difference discovered by a comparison, whether or not
+// the finding itself was retained under the cap.
+type Counts struct {
+	Total       int `json:"total"`
+	Fail        int `json:"fail"`
+	Warn        int `json:"warn"`
+	Retained    int `json:"retained"`
+	Omitted     int `json:"omitted"`
+	OmittedFail int `json:"omitted_fail"`
+	OmittedWarn int `json:"omitted_warn"`
+}
+
+// Outcome is the worst severity over ALL discovered differences, including
+// omitted ones, or PASS when there are none.
+func (c Counts) Outcome() verdict.Outcome {
+	switch {
+	case c.Fail > 0:
+		return verdict.Fail
+	case c.Warn > 0:
+		return verdict.Warn
+	}
+	return verdict.Pass
+}
 
 // Result is the outcome of comparing two observations.
 type Result struct {
-	Findings   []Finding
-	Omitted    int            // findings beyond MaxFindings
+	Findings   []Finding      // retained findings, sorted (at most MaxFindings)
+	Omitted    int            // findings not retained; same as Counts.Omitted
+	Counts     Counts         // every discovered difference, retained or omitted
 	Suppressed map[string]int // ignore pointer -> differences it suppressed
 }
 
-// Outcome is the worst finding severity, or PASS when there are none.
-func (r Result) Outcome() verdict.Outcome {
-	o := verdict.Pass
-	for _, f := range r.Findings {
-		o = verdict.Worst(o, f.Severity)
-	}
-	return o
-}
+// Outcome is the worst severity over every discovered difference. It is
+// computed from Counts, never from the retained subset, so the finding cap
+// cannot turn a FAIL into a WARN or PASS.
+func (r Result) Outcome() verdict.Outcome { return r.Counts.Outcome() }
 
 // Observed is a normalized response ready for comparison.
 type Observed struct {
@@ -134,19 +157,7 @@ type Location struct {
 	Display string
 }
 
-func originKey(u *url.URL) string {
-	scheme := strings.ToLower(u.Scheme)
-	port := u.Port()
-	if port == "" {
-		switch scheme {
-		case "http":
-			port = "80"
-		case "https":
-			port = "443"
-		}
-	}
-	return scheme + "://" + strings.ToLower(u.Hostname()) + ":" + port
-}
+var originKey = config.OriginKey
 
 // NormalizeLocation resolves a Location header against the request URL. A
 // same-origin target is reduced to its path and query so that baseline and
@@ -231,7 +242,7 @@ type differ struct {
 	opts       Options
 	ignore     map[string]bool
 	findings   []Finding
-	omitted    int
+	counts     Counts
 	suppressed map[string]int
 }
 
@@ -246,12 +257,42 @@ func newDiffer(opts Options) *differ {
 	return d
 }
 
+// add records a difference. Every difference is counted; at most
+// MaxFindings are retained. Once the cap is reached, a FAIL replaces the most
+// recently retained WARN so that blocking evidence stays visible.
 func (d *differ) add(cat Category, path string, sev verdict.Outcome, base, cand string) {
-	if len(d.findings) >= d.opts.MaxFindings {
-		d.omitted++
+	f := Finding{Category: cat, Path: path, Severity: sev, Baseline: base, Candidate: cand}
+	d.counts.Total++
+	switch sev {
+	case verdict.Fail:
+		d.counts.Fail++
+	case verdict.Warn:
+		d.counts.Warn++
+	}
+	if len(d.findings) < d.opts.MaxFindings {
+		d.findings = append(d.findings, f)
 		return
 	}
-	d.findings = append(d.findings, Finding{Category: cat, Path: path, Severity: sev, Baseline: base, Candidate: cand})
+	if sev == verdict.Fail {
+		for i := len(d.findings) - 1; i >= 0; i-- {
+			if d.findings[i].Severity != verdict.Fail {
+				d.omit(d.findings[i].Severity)
+				d.findings[i] = f
+				return
+			}
+		}
+	}
+	d.omit(sev)
+}
+
+func (d *differ) omit(sev verdict.Outcome) {
+	d.counts.Omitted++
+	switch sev {
+	case verdict.Fail:
+		d.counts.OmittedFail++
+	case verdict.Warn:
+		d.counts.OmittedWarn++
+	}
 }
 
 // walk compares two JSON values at path. Object key order never matters;
@@ -313,7 +354,8 @@ func (d *differ) walk(path string, b, c *Value) {
 
 func (d *differ) result() Result {
 	SortFindings(d.findings)
-	return Result{Findings: d.findings, Omitted: d.omitted, Suppressed: d.suppressed}
+	d.counts.Retained = len(d.findings)
+	return Result{Findings: d.findings, Omitted: d.counts.Omitted, Counts: d.counts, Suppressed: d.suppressed}
 }
 
 // SortFindings orders findings deterministically: non-body findings first

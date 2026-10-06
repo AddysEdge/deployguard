@@ -21,6 +21,9 @@ import (
 // SchemaVersion is incremented on any incompatible report change.
 const SchemaVersion = 1
 
+// Redacted replaces values that must not appear in reports.
+const Redacted = "<redacted>"
+
 // Report is the top-level JSON document.
 type Report struct {
 	SchemaVersion int             `json:"schema_version"`
@@ -52,7 +55,7 @@ type Run struct {
 	Baseline        string    `json:"baseline"`
 	Candidate       string    `json:"candidate"`
 	PlannedRequests int       `json:"planned_requests"`
-	IssuedRequests  int64     `json:"issued_requests"`
+	IssuedRequests  int64     `json:"issued_requests"` // logical exchanges, not guaranteed wire-level attempts
 }
 
 // Settings are the effective, non-secret global settings.
@@ -92,7 +95,7 @@ type Scenario struct {
 	Name        string              `json:"name"`
 	Method      string              `json:"method"`
 	Path        string              `json:"path"`
-	Query       map[string][]string `json:"query,omitempty"`
+	Query       map[string][]string `json:"query,omitempty"` // parameter names with every value replaced by "<redacted>"
 	Outcome     verdict.Outcome     `json:"outcome"`
 	Behavior    Behavior            `json:"behavior"`
 	Performance perf.Result         `json:"performance"`
@@ -100,16 +103,23 @@ type Scenario struct {
 
 // Behavior is the functional/contract sub-result.
 type Behavior struct {
-	Outcome              verdict.Outcome   `json:"outcome"`
-	Reasons              []string          `json:"reasons"`
-	ExpectStatus         int               `json:"expect_status,omitempty"`
-	StrictAdditions      bool              `json:"strict_additions"`
-	Observations         []Observation     `json:"observations"`
-	Findings             []compare.Finding `json:"findings"`
-	FindingsOmitted      int               `json:"findings_omitted"`
-	BaselineInstability  []compare.Finding `json:"baseline_instability,omitempty"`
-	CandidateInstability []compare.Finding `json:"candidate_instability,omitempty"`
-	IgnoreRules          []IgnoreRule      `json:"ignore_rules"`
+	Outcome         verdict.Outcome `json:"outcome"`
+	Reasons         []string        `json:"reasons"`
+	ExpectStatus    int             `json:"expect_status,omitempty"`
+	StrictAdditions bool            `json:"strict_additions"`
+	Observations    []Observation   `json:"observations"`
+	// Findings are the RETAINED baseline/candidate findings: at most 100,
+	// FAIL findings retained in preference to WARN, sorted deterministically.
+	Findings        []compare.Finding `json:"findings"`
+	FindingsOmitted int               `json:"findings_omitted"` // differences found but not retained
+	// FindingCounts counts every discovered difference by severity, retained
+	// or omitted. The behavioral verdict is derived from these counts.
+	FindingCounts               compare.Counts    `json:"finding_counts"`
+	BaselineInstability         []compare.Finding `json:"baseline_instability,omitempty"`
+	BaselineInstabilityOmitted  int               `json:"baseline_instability_omitted,omitempty"`
+	CandidateInstability        []compare.Finding `json:"candidate_instability,omitempty"`
+	CandidateInstabilityOmitted int               `json:"candidate_instability_omitted,omitempty"`
+	IgnoreRules                 []IgnoreRule      `json:"ignore_rules"`
 }
 
 // Observation is one functional request. Bodies and headers are omitted.

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AddysEdge/deployguard/internal/compare"
 	"github.com/AddysEdge/deployguard/internal/config"
 	"github.com/AddysEdge/deployguard/internal/fixture"
 	"github.com/AddysEdge/deployguard/internal/replay"
@@ -288,5 +290,44 @@ func TestRunCanceled(t *testing.T) {
 		if s.Outcome == verdict.Pass {
 			t.Fatalf("%s reported PASS in a canceled run", s.Name)
 		}
+	}
+}
+
+// manyAdded returns a JSON object with n added keys a000..a(n-1), plus extra.
+func manyAdded(n int, extra string) string {
+	var b strings.Builder
+	b.WriteString("{")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"a%03d":1`, i)
+	}
+	b.WriteString(extra + "}")
+	return b.String()
+}
+
+func TestEvaluateFindingCapKeepsFail(t *testing.T) {
+	// 100 WARN additions sort before the FAIL removal of /z.
+	b := js(200, `{"z":1}`)
+	c := js(200, manyAdded(100, ""))
+	beh := Evaluate(scenario(), bURL, cURL, []replay.Response{b, c, b, c})
+	if beh.Outcome != verdict.Fail {
+		t.Fatalf("outcome = %s, want FAIL: a FAIL beyond the finding cap must still block", beh.Outcome)
+	}
+	want := compare.Counts{Total: 101, Fail: 1, Warn: 100, Retained: 100, Omitted: 1, OmittedWarn: 1}
+	if beh.FindingCounts != want || beh.FindingsOmitted != 1 || len(beh.Findings) != 100 {
+		t.Fatalf("counts %+v omitted %d retained %d", beh.FindingCounts, beh.FindingsOmitted, len(beh.Findings))
+	}
+	reason := strings.Join(beh.Reasons, " | ")
+	if !strings.Contains(reason, "1 FAIL and 100 WARN") || !strings.Contains(reason, "100 retained in the report, 1 omitted") || !strings.Contains(reason, "0 FAIL, 1 WARN omitted") {
+		t.Fatalf("reason misreports counts: %s", reason)
+	}
+
+	// More than 100 WARNs and nothing blocking stays WARN.
+	c = js(200, manyAdded(150, `,"z":1`))
+	beh = Evaluate(scenario(), bURL, cURL, []replay.Response{b, c, b, c})
+	if beh.Outcome != verdict.Warn || beh.FindingCounts.Warn != 150 || beh.FindingCounts.Fail != 0 {
+		t.Fatalf("150 WARNs: outcome %s counts %+v", beh.Outcome, beh.FindingCounts)
 	}
 }

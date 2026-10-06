@@ -321,3 +321,34 @@ func TestLoadFileAndExamples(t *testing.T) {
 		}
 	}
 }
+
+func TestEquivalentOrigins(t *testing.T) {
+	tests := []struct {
+		a, b string
+		same bool
+	}{
+		{"http://example.test", "http://example.test", true},
+		{"http://example.test", "http://EXAMPLE.test:80", true},
+		{"https://example.test/", "https://example.test:443", true},
+		{"http://127.0.0.1:8080", "http://127.0.0.1:8080/", true},
+		{"http://[::1]:9000", "http://[::1]:9000", true},
+		{"http://127.0.0.1:8080", "http://127.0.0.1:8081", false}, // distinct ports
+		{"http://example.test", "https://example.test", false},    // scheme
+		{"http://example.test:443", "https://example.test", false},
+		{"http://localhost:8080", "http://127.0.0.1:8080", false}, // no DNS resolution
+		{"http://a.example.test", "http://b.example.test", false},
+	}
+	for _, tt := range tests {
+		a, err := ParseOrigin(tt.a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := ParseOrigin(tt.b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := EquivalentOrigins(a, b); got != tt.same {
+			t.Errorf("EquivalentOrigins(%s, %s) = %v, want %v", tt.a, tt.b, got, tt.same)
+		}
+	}
+}

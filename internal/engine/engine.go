@@ -128,7 +128,7 @@ func Run(ctx context.Context, cfg *config.Config, baseline, candidate *url.URL, 
 			slg.Info("measured", "performance", pr.Outcome)
 		}
 		rep.Scenarios = append(rep.Scenarios, report.Scenario{
-			Name: sc.Name, Method: sc.Method, Path: sc.Path, Query: queryOrNil(sc.Query),
+			Name: sc.Name, Method: sc.Method, Path: sc.Path, Query: redactQuery(sc.Query),
 			Outcome: verdict.Worst(beh.Outcome, pr.Outcome), Behavior: beh, Performance: pr,
 		})
 	}
@@ -179,9 +179,21 @@ func scenarioReasons(scenarios []report.Scenario) []string {
 	return out
 }
 
-func queryOrNil(q url.Values) map[string][]string {
+// redactQuery keeps query parameter names and value multiplicity for the
+// report but replaces every value, since reports are shared as CI artifacts
+// and query values can carry tokens or personal data. The requests sent to
+// the targets still use the real values.
+func redactQuery(q url.Values) map[string][]string {
 	if len(q) == 0 {
 		return nil
 	}
-	return q
+	out := make(map[string][]string, len(q))
+	for name, values := range q {
+		redacted := make([]string, len(values))
+		for i := range redacted {
+			redacted[i] = report.Redacted
+		}
+		out[name] = redacted
+	}
+	return out
 }

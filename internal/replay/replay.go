@@ -1,8 +1,16 @@
 // Package replay executes the configured GET/HEAD requests against one target
 // origin with strict limits: per-request deadlines, bounded response bodies,
-// no redirect following and no retries. Failures are classified so that a
-// timeout, DNS failure, refused connection or oversized body stays
-// distinguishable in findings and reports.
+// no redirect following and no application-level retries. Failures are
+// classified so that a timeout, DNS failure, refused connection or oversized
+// body stays distinguishable in findings and reports.
+//
+// Connections are reused through a standard net/http Transport. Per the
+// net/http documentation, that Transport may itself retry an idempotent
+// request (GET and HEAD qualify) once when a network error occurs on a
+// connection that was already used successfully, typically a keep-alive
+// connection the server closed. DeployGuard keeps connection reuse for
+// realistic latency measurement and accepts this narrow transport behavior;
+// one Do call is one logical exchange, not a guaranteed single wire attempt.
 package replay
 
 import (
@@ -88,7 +96,8 @@ func NewTarget(name string, origin *url.URL, maxConns int) *Target {
 	}
 }
 
-// Issued returns how many requests this target has sent.
+// Issued returns how many logical exchanges (Do calls that reached the HTTP
+// client) this target has made. It is not a count of wire-level attempts.
 func (t *Target) Issued() int64 { return t.issued.Load() }
 
 // Close releases idle connections.
@@ -121,9 +130,11 @@ func BuildURL(origin *url.URL, path string, query url.Values) (*url.URL, error) 
 	return u, nil
 }
 
-// Do sends req to the target once. When keepBody is false the body is still
-// read (bounded) so that durations include transfer time, but it is
-// discarded. Do never retries and never follows redirects.
+// Do performs one logical exchange with the target. When keepBody is false
+// the body is still read (bounded) so that durations include transfer time,
+// but it is discarded. Do never follows redirects and has no retry loop; the
+// only possible resend is net/http's transport-level retry of an idempotent
+// request on a reused connection (see the package documentation).
 func (t *Target) Do(ctx context.Context, req Request, keepBody bool) Response {
 	u, err := BuildURL(t.Origin, req.Path, req.Query)
 	if err != nil {

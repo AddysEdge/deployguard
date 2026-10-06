@@ -98,10 +98,10 @@ func Evaluate(sc config.Scenario, baseURL, candURL *url.URL, obs []replay.Respon
 	b1, b2 := baseObs[0], baseObs[1]
 	bs := compare.Compare(b1, b2, stability)
 	merge(usage, bs.Suppressed)
-	if len(bs.Findings) > 0 {
+	if bs.Counts.Total > 0 {
 		beh.Outcome = verdict.Inconclusive
-		beh.Reasons = []string{fmt.Sprintf("baseline unstable: its observations differ in %d place(s) after ignore rules, so it cannot define the expected behavior", len(bs.Findings)+bs.Omitted)}
-		beh.BaselineInstability = bs.Findings
+		beh.Reasons = []string{fmt.Sprintf("baseline unstable: its observations differ in %d place(s) after ignore rules, so it cannot define the expected behavior", bs.Counts.Total)}
+		beh.BaselineInstability, beh.BaselineInstabilityOmitted = bs.Findings, bs.Counts.Omitted
 		beh.IgnoreRules = ignoreReport(sc, usage, true, b1.JSON, bs.Findings)
 		return beh
 	}
@@ -121,23 +121,22 @@ func Evaluate(sc config.Scenario, baseURL, candURL *url.URL, obs []replay.Respon
 	x := compare.Compare(b1, c1, compare.Options{Ignore: sc.Ignore, StrictAdditions: sc.StrictAdditions})
 	merge(usage, x.Suppressed)
 
-	beh.Findings, beh.FindingsOmitted = x.Findings, x.Omitted
+	// The verdict comes from counts over every discovered difference, never
+	// from the retained subset, so the finding cap cannot hide a FAIL.
+	beh.Findings, beh.FindingsOmitted, beh.FindingCounts = x.Findings, x.Counts.Omitted, x.Counts
 	beh.Outcome = x.Outcome()
-	if n := len(x.Findings) + x.Omitted; n > 0 {
-		fails, warns := 0, 0
-		for _, f := range x.Findings {
-			if f.Severity == verdict.Fail {
-				fails++
-			} else {
-				warns++
-			}
+	if c := x.Counts; c.Total > 0 {
+		reason := fmt.Sprintf("candidate differs from baseline: %d FAIL and %d WARN finding(s)", c.Fail, c.Warn)
+		if c.Omitted > 0 {
+			reason += fmt.Sprintf("; %d retained in the report, %d omitted by the %d-finding cap (%d FAIL, %d WARN omitted)",
+				c.Retained, c.Omitted, compare.DefaultMaxFindings, c.OmittedFail, c.OmittedWarn)
 		}
-		beh.Reasons = append(beh.Reasons, fmt.Sprintf("candidate differs from baseline: %d FAIL and %d WARN finding(s)", fails+x.Omitted, warns))
+		beh.Reasons = append(beh.Reasons, reason)
 	}
-	if len(cs.Findings) > 0 {
+	if cs.Counts.Total > 0 {
 		beh.Outcome = verdict.Fail
-		beh.CandidateInstability = cs.Findings
-		beh.Reasons = append(beh.Reasons, fmt.Sprintf("candidate unstable: its observations differ in %d place(s) while the baseline was stable", len(cs.Findings)+cs.Omitted))
+		beh.CandidateInstability, beh.CandidateInstabilityOmitted = cs.Findings, cs.Counts.Omitted
+		beh.Reasons = append(beh.Reasons, fmt.Sprintf("candidate unstable: its observations differ in %d place(s) while the baseline was stable", cs.Counts.Total))
 	}
 	if beh.Outcome == verdict.Pass {
 		what := fmt.Sprintf("status %d", b1.Status)

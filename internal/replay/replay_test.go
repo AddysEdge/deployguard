@@ -354,3 +354,28 @@ func TestForEachEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+// TestIssuedCountsLogicalExchanges documents that Issued counts one logical
+// exchange per Do call, whether it succeeded or failed.
+func TestIssuedCountsLogicalExchanges(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	ok := newTarget(t, srv)
+	for i := 0; i < 3; i++ {
+		ok.Do(context.Background(), get("/"), false)
+	}
+	if got := ok.Issued(); got != 3 {
+		t.Fatalf("Issued = %d after 3 successful exchanges", got)
+	}
+
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	addr := ln.Addr().String()
+	ln.Close()
+	dead := NewTarget("dead", mustOrigin(t, "http://"+addr), 1)
+	defer dead.Close()
+	dead.Do(context.Background(), get("/"), false)
+	dead.Do(context.Background(), get("/"), false)
+	if got := dead.Issued(); got != 2 {
+		t.Fatalf("Issued = %d after 2 failed exchanges", got)
+	}
+}
