@@ -1,0 +1,104 @@
+# DeployGuard workload, schema version 1.
+#
+# The workload describes WHAT to request and HOW to judge it. The baseline and
+# candidate origins are deliberately NOT in this file; pass them on the command
+# line so the same workload can be pointed at any pair of controlled
+# environments:
+#
+#   deployguard compare --config examples/deployguard.yaml \
+#     --baseline http://127.0.0.1:8080 --candidate http://127.0.0.1:8081 \
+#     --report reports/run.json
+#
+# The scenarios below target the bundled fixture service (cmd/dg-fixture).
+version: 1
+
+settings:
+  timeout: 5s               # per request (default 5s, max 60s)
+  max_response_bytes: 1048576  # 1 MiB (default), max 16 MiB
+  concurrency: 4            # functional checks in flight (default 4, max 16)
+  max_total_requests: 5000  # refuse workloads that would plan more requests
+
+scenarios:
+  # A normal JSON scenario. Object key order never matters; array order does.
+  - name: get-user
+    method: GET
+    path: /api/users/42
+    headers:
+      Accept: application/json
+      X-Request-Source: deployguard
+      # Secrets come from the environment and are never printed or reported:
+      # Authorization: "Bearer ${DEPLOYGUARD_TOKEN}"
+    expect_status: 200
+
+  - name: get-order
+    method: GET
+    path: /api/orders/7
+
+  # expect_status validates BOTH targets: a baseline that violates it makes
+  # the scenario INCONCLUSIVE; a candidate that violates it is a FAIL.
+  - name: get-item
+    method: GET
+    path: /api/items/3
+    expect_status: 200
+
+  # A candidate 5xx against a healthy baseline is a FAIL. A baseline 5xx is
+  # INCONCLUSIVE, even when the candidate returns the same 5xx.
+  - name: inventory
+    method: GET
+    path: /api/inventory
+
+  # requestId and timestamp change on every request. Ignore exactly those
+  # scalar values (RFC 6901 JSON Pointers, not "$.requestId" JSONPath).
+  # An ignore rule never hides a removed field, a type change or structure.
+  - name: service-status
+    method: GET
+    path: /api/status
+    ignore:
+      - /requestId
+      - /timestamp
+
+  # Candidates reorder object keys here; this must not be a difference.
+  - name: get-profile
+    method: GET
+    path: /api/profile
+
+  # A candidate that ADDS a field is a WARN by default. Set
+  # strict_additions: true to make additions a FAIL.
+  - name: get-catalog
+    method: GET
+    path: /api/catalog
+
+  # HEAD: status, media type and Location are compared; there is no body.
+  - name: export-head
+    method: HEAD
+    path: /api/export.csv
+
+  # A non-JSON body is compared byte-for-byte; findings show only size and digest.
+  - name: export-csv
+    method: GET
+    path: /api/export.csv
+
+  # Redirects are never followed. Status and Location are compared, with each
+  # target's own origin normalized away for same-origin Locations.
+  - name: legacy-redirect
+    method: GET
+    path: /api/redirect
+    expect_status: 302
+
+  # Opt-in latency gate: 2 rounds (baseline->candidate, then
+  # candidate->baseline), warm-up excluded, >=100 measured attempts per target
+  # per round. A round breaches only if candidate p95 exceeds baseline p95 by
+  # more than 50% AND more than 50 ms. Both rounds must breach for the gate to
+  # apply; one breach is a WARN.
+  - name: search
+    method: GET
+    path: /api/search
+    query:
+      q: pen
+    performance:
+      warmup: 10
+      samples: 100
+      concurrency: 8
+      p95_relative_pct: 50
+      p95_absolute_ms: 50
+      gate: fail

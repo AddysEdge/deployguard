@@ -1,0 +1,14 @@
+# N1: candidates add 0-4 ms of random jitter to /api/noisy. This modest, noisy
+# difference must not become a FAIL under a 25 ms absolute threshold -> expected PASS.
+version: 1
+scenarios:
+  - name: noisy
+    method: GET
+    path: /api/noisy
+    performance:
+      warmup: 10
+      samples: 100
+      concurrency: 4
+      p95_relative_pct: 50
+      p95_absolute_ms: 25
+      gate: fail

@@ -1,0 +1,8 @@
+# R8 (strict policy): the same added field with strict_additions enabled
+# -> expected FAIL.
+version: 1
+scenarios:
+  - name: get-catalog
+    method: GET
+    path: /api/catalog
+    strict_additions: true

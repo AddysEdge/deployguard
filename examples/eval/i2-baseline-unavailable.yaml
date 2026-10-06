@@ -1,0 +1,8 @@
+# I2: run with a baseline origin that refuses connections -> expected INCONCLUSIVE.
+version: 1
+settings:
+  timeout: 2s
+scenarios:
+  - name: get-user
+    method: GET
+    path: /api/users/42

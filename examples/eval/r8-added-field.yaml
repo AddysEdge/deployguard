@@ -1,0 +1,7 @@
+# R8 (default policy): the regressed candidate adds a harmless /featured field
+# -> expected WARN (non-blocking).
+version: 1
+scenarios:
+  - name: get-catalog
+    method: GET
+    path: /api/catalog

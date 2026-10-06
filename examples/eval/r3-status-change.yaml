@@ -1,0 +1,7 @@
+# R3: the regressed candidate returns 404 instead of 200 -> expected FAIL.
+# No expect_status here: the status change alone must be detected.
+version: 1
+scenarios:
+  - name: get-item
+    method: GET
+    path: /api/items/3

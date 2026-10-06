@@ -1,0 +1,6 @@
+# R1: the regressed candidate removes /email -> expected FAIL.
+version: 1
+scenarios:
+  - name: get-user
+    method: GET
+    path: /api/users/42

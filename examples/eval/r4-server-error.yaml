@@ -1,0 +1,6 @@
+# R4: the regressed candidate returns 500 against a healthy baseline -> expected FAIL.
+version: 1
+scenarios:
+  - name: inventory
+    method: GET
+    path: /api/inventory

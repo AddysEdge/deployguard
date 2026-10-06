@@ -1,0 +1,6 @@
+# R2: the regressed candidate returns /total as a string instead of a number -> expected FAIL.
+version: 1
+scenarios:
+  - name: get-order
+    method: GET
+    path: /api/orders/7

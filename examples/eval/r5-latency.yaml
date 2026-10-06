@@ -1,0 +1,16 @@
+# R5: the regressed candidate adds a large fixed delay (120 ms by default) to
+# /api/search. With the gate below, both rounds breach -> expected FAIL.
+version: 1
+scenarios:
+  - name: search
+    method: GET
+    path: /api/search
+    query:
+      q: pen
+    performance:
+      warmup: 10
+      samples: 100
+      concurrency: 8
+      p95_relative_pct: 50
+      p95_absolute_ms: 50
+      gate: fail

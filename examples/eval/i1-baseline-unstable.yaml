@@ -1,0 +1,7 @@
+# I1: the baseline returns a different counter value on every request and no
+# ignore rule covers it, so it cannot define a contract -> expected INCONCLUSIVE.
+version: 1
+scenarios:
+  - name: unstable
+    method: GET
+    path: /api/unstable

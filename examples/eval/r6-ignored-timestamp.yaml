@@ -1,0 +1,10 @@
+# R6: requestId and timestamp change on every request; they are ignored at
+# their exact JSON Pointer paths -> expected PASS.
+version: 1
+scenarios:
+  - name: service-status
+    method: GET
+    path: /api/status
+    ignore:
+      - /requestId
+      - /timestamp

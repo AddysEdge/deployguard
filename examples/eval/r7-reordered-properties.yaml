@@ -1,0 +1,6 @@
+# R7: candidates emit the same object with keys in a different order -> expected PASS.
+version: 1
+scenarios:
+  - name: get-profile
+    method: GET
+    path: /api/profile
