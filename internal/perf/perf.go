@@ -159,11 +159,12 @@ type Policy struct {
 // AggregateStats combines both rounds for one target (informational only;
 // the gate uses per-round values).
 type AggregateStats struct {
-	Attempts  int      `json:"attempts"`
-	Successes int      `json:"successes"`
-	Errors    int      `json:"errors"`
-	P50Ms     *float64 `json:"p50_ms"`
-	P95Ms     *float64 `json:"p95_ms"`
+	WarmupAttempts int      `json:"warmup_attempts"`
+	Attempts       int      `json:"attempts"` // measured attempts, as in TargetStats
+	Successes      int      `json:"successes"`
+	Errors         int      `json:"errors"` // warm-up and measured
+	P50Ms          *float64 `json:"p50_ms"`
+	P95Ms          *float64 `json:"p95_ms"`
 }
 
 // Aggregate holds per-target aggregates across rounds.
@@ -191,7 +192,8 @@ func aggregate(rounds []Round, pick func(Round) TargetStats) AggregateStats {
 	var all []time.Duration
 	for _, r := range rounds {
 		s := pick(r)
-		a.Attempts += s.Attempts + s.WarmupAttempts
+		a.WarmupAttempts += s.WarmupAttempts
+		a.Attempts += s.Attempts
 		a.Errors += s.Errors()
 		all = append(all, s.durations...)
 	}

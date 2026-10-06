@@ -53,9 +53,9 @@ func TestBuildURL(t *testing.T) {
 }
 
 func TestDoCapturesResponseAndSendsHeaders(t *testing.T) {
-	var gotAuth, gotUA, gotQuery string
+	seen := make(chan [3]string, 1) // handler runs on another goroutine
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth, gotUA, gotQuery = r.Header.Get("Authorization"), r.Header.Get("User-Agent"), r.URL.RawQuery
+		seen <- [3]string{r.Header.Get("Authorization"), r.Header.Get("User-Agent"), r.URL.RawQuery}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Write([]byte(`{"ok":true}`))
 	}))
@@ -74,8 +74,8 @@ func TestDoCapturesResponseAndSendsHeaders(t *testing.T) {
 	if !strings.HasPrefix(resp.ContentType, "application/json") {
 		t.Fatalf("content type %q", resp.ContentType)
 	}
-	if gotAuth != "Bearer abc" || gotUA != UserAgent || gotQuery != "q=pen" {
-		t.Fatalf("server saw auth=%q ua=%q query=%q", gotAuth, gotUA, gotQuery)
+	if got := <-seen; got != [3]string{"Bearer abc", UserAgent, "q=pen"} {
+		t.Fatalf("server saw auth=%q ua=%q query=%q", got[0], got[1], got[2])
 	}
 }
 

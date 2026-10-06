@@ -264,6 +264,9 @@ func TestMeasureDetectsLargeLatencyIncrease(t *testing.T) {
 			t.Fatalf("round %d status %s", r.Round, r.Status)
 		}
 	}
+	// Read the server-side tracker under its lock (handlers ran on other goroutines).
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	// Server-observed request order: B, C (round 1), C, B (round 2).
 	if strings.Join(tr.order, ",") != "baseline,candidate,baseline" {
 		t.Fatalf("targets were not measured in alternating blocks: %v", tr.order)
@@ -277,7 +280,7 @@ func TestMeasureDetectsLargeLatencyIncrease(t *testing.T) {
 	if tr.hits["baseline"] != 206 || tr.hits["candidate"] != 206 {
 		t.Fatalf("hits = %v, want 206 each (2 rounds x (3 warm-up + 100))", tr.hits)
 	}
-	if a := res.Aggregate; a.Baseline.Successes != 200 || a.Candidate.Attempts != 206 {
+	if a := res.Aggregate; a.Baseline.Successes != 200 || a.Candidate.Attempts != 200 || a.Candidate.WarmupAttempts != 6 {
 		t.Fatalf("aggregate = %+v", a)
 	}
 }

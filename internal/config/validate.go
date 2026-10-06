@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -326,14 +325,4 @@ func ParseOrigin(raw string) (*url.URL, error) {
 		}
 	}
 	return &url.URL{Scheme: scheme, Host: strings.ToLower(u.Host)}, nil
-}
-
-// SortedQueryKeys is a helper for deterministic display.
-func SortedQueryKeys(q url.Values) []string {
-	keys := make([]string, 0, len(q))
-	for k := range q {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
