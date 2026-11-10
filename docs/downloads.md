@@ -25,6 +25,19 @@ Use the filename for your platform. Windows also supports `tar -xzf`; run
 
 ## Run a local comparison
 
+With Node.js 24 available, the repository also provides a bounded foreground demo
+that starts its own loopback APIs and checks the published executable:
+
+```bash
+node scripts/demo-release.mjs --binary /path/to/extracted/deployguard
+```
+
+On Windows, pass the path to `deployguard.exe`. It records a clean PASS and an
+expected regression FAIL, with JSON reports and a transcript under `reports/`.
+It requires no Go installation, credentials or external API. The
+[published-binary workflow](../.github/workflows/published-demo.yml) verifies this
+on Linux, Windows and macOS using the checksummed v0.1.0 release.
+
 Use two unused ports. The sample below compares the healthy baseline to the deliberately
 regressed fixture. A FAIL and exit code 1 are the expected result. Choose
 `--variant clean` for the candidate to try a passing comparison instead.
