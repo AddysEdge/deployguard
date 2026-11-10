@@ -1,5 +1,12 @@
 # DeployGuard
 
+[![CI](https://github.com/AddysEdge/deployguard/actions/workflows/ci.yml/badge.svg)](https://github.com/AddysEdge/deployguard/actions/workflows/ci.yml)
+
+[Download binaries](https://github.com/AddysEdge/deployguard/releases/latest) ·
+[Run the packaged demo](docs/downloads.md) ·
+[Passing gate](https://github.com/AddysEdge/deployguard/actions/runs/40748712946) ·
+[Intentionally blocked regression](https://github.com/AddysEdge/deployguard/actions/runs/37548443328)
+
 **DeployGuard runs the same API workload against the current (baseline) and candidate backend releases and detects behavioral, contract, error and performance regressions before deployment.**
 
 It is a single Go CLI meant for a CI release gate. You describe a small, versioned GET/HEAD workload in YAML, point it at two controlled environments, and get a terminal summary, a versioned JSON report, and an exit code that a pipeline can act on.
@@ -48,6 +55,9 @@ Architecture, package responsibilities and failure handling are described in [do
 ---
 
 ## Quick start
+
+For a native binary and fixture server without a Go installation, use the
+[download and demo instructions](docs/downloads.md). The commands below build from source.
 
 **Prerequisites:** Go 1.27 or newer, plus `bash` and `curl` for the release-gate script. On Ubuntu (including GitHub Actions) these are standard. On Windows, use Git Bash; the script adds `.exe` automatically. No Docker, database, credentials or network access beyond loopback are needed.
 

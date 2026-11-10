@@ -1,0 +1,65 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Verify source
+        run: |
+          go vet ./...
+          go test -race ./...
+      - name: Package Linux, macOS and Windows bundles
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          version=v0.0.0
+          if [ "$IS_TAG" = true ]; then version="$RELEASE_REF"; fi
+          bash scripts/package-release.sh "$version"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-bundles
+          path: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-bundles
+          path: dist
+      - name: Publish verified bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Download the bundle for your OS and CPU, extract it, and verify it against checksums.txt.
+          Each bundle includes DeployGuard, the fixture server and a sample workload.
+          See [download and demo instructions](https://github.com/AddysEdge/deployguard/blob/main/docs/downloads.md).
+          These are native builds with CGO disabled. The workflow runs tests before publishing;
+          cross-compilation does not establish runtime verification on every target platform.
+          NOTES
+          gh release create "$RELEASE_TAG" dist/*.tar.gz dist/checksums.txt \
+            --verify-tag --title "DeployGuard $RELEASE_TAG" --notes-file release-notes.md
