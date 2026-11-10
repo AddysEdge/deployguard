@@ -4,7 +4,9 @@ import path from 'node:path';
 const directory = process.argv[2];
 if (!directory) throw new Error('Usage: node scripts/render-demo.mjs <demo output directory>');
 const transcript = await readFile(path.join(directory, 'transcript.txt'), 'utf8');
-const lines = transcript.trimEnd().split(/\r?\n/);
+const lines = transcript.trimEnd().split(/\r?\n/)
+  .filter(line => !/^time=\S+ level=INFO /.test(line))
+  .flatMap(line => line.length <= 100 ? [line] : line.match(/.{1,100}/g));
 const escape = text => text.replace(/[&<>"']/g, value => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
 })[value]);
@@ -20,6 +22,6 @@ await writeFile(path.join(directory, 'terminal.svg'), [
   '<rect width="100%" height="100%" rx="12" fill="#0f172a"/>',
   '<g font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="16">',
   '<text x="24" y="32" fill="#f8fafc">DeployGuard · recorded CLI output</text>',
-  '<text x="24" y="56" fill="#94a3b8">Synthetic loopback demo · FAIL is the expected regression result</text>',
+  '<text x="24" y="56" fill="#94a3b8">Synthetic demo · wrapped output excerpt · full INFO logs in transcript.txt</text>',
   rows, '</g></svg>', '',
 ].join('\n'));

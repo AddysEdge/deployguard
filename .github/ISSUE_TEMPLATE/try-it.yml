@@ -1,0 +1,30 @@
+name: Demo or setup feedback
+description: Report what happened when trying a release or the local demo.
+title: "[Try-it] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove credentials, private URLs, response bodies and personal data from logs.
+        Synthetic fixtures are the easiest way to share a reproducible report.
+  - type: input
+    id: environment
+    attributes:
+      label: OS, CPU and DeployGuard version
+      placeholder: "Windows x64, deployguard v0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact steps or commands
+      description: Include the public example workload, or a small sanitized replacement.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and observed result
+      description: Include the exit code and a sanitized report excerpt, if available.
+    validations:
+      required: true
