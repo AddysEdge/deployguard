@@ -1,0 +1,47 @@
+$ deployguard version
+deployguard v0.1.0
+
+$ deployguard compare  # clean synthetic candidate
+DeployGuard v0.1.0  run 3954f79fa59e3663
+  baseline   http://127.0.0.1:45975
+  candidate  http://127.0.0.1:34797
+  workload   /home/runner/work/_temp/demo/workload.yaml: 1 scenario(s), 4 request(s) planned, 4 issued, 0.0s
+
+PASS         get-user  GET /api/users/42
+  behavior     PASS         candidate matched baseline (status 200, application/json)
+  performance  SKIPPED      not configured for this scenario
+
+Result: PASS (exit code 0)
+  0 FAIL, 0 INCONCLUSIVE, 0 WARN, 1 PASS
+  - no scenario failed or was inconclusive (1 PASS, 0 WARN); WARN does not block release
+Report: /home/runner/work/_temp/demo/clean.json
+time=2026-11-10T04:56:50.351Z level=INFO msg="run started" run_id=3954f79fa59e3663 config=/home/runner/work/_temp/demo/workload.yaml scenarios=1 planned_requests=4 baseline=http://127.0.0.1:45975 candidate=http://127.0.0.1:34797
+time=2026-11-10T04:56:50.351Z level=INFO msg="phase started" run_id=3954f79fa59e3663 phase=functional scenarios=1 concurrency=4
+time=2026-11-10T04:56:50.358Z level=INFO msg="scenario checked" run_id=3954f79fa59e3663 phase=functional scenario=get-user behavior=PASS
+time=2026-11-10T04:56:50.358Z level=INFO msg="phase finished" run_id=3954f79fa59e3663 phase=functional duration_ms=6.68 requests=4
+time=2026-11-10T04:56:50.358Z level=INFO msg="run finished" run_id=3954f79fa59e3663 outcome=PASS duration_ms=6.728 requests=4 canceled=false
+Observed exit code: 0
+
+$ deployguard compare  # regressed synthetic candidate
+DeployGuard v0.1.0  run c5c16e913a05bb81
+  baseline   http://127.0.0.1:45975
+  candidate  http://127.0.0.1:34797
+  workload   /home/runner/work/_temp/demo/workload.yaml: 1 scenario(s), 4 request(s) planned, 4 issued, 0.0s
+
+FAIL         get-user  GET /api/users/42
+  behavior     FAIL         candidate differs from baseline: 1 FAIL and 0 WARN finding(s)
+               FAIL field_removed        /email string -> missing
+  performance  SKIPPED      not configured for this scenario
+
+Result: FAIL (exit code 1)
+  1 FAIL, 0 INCONCLUSIVE, 0 WARN, 0 PASS
+  - get-user FAIL: behavior FAIL: field_removed /email
+Report: /home/runner/work/_temp/demo/regressed.json
+time=2026-11-10T04:56:50.364Z level=INFO msg="run started" run_id=c5c16e913a05bb81 config=/home/runner/work/_temp/demo/workload.yaml scenarios=1 planned_requests=4 baseline=http://127.0.0.1:45975 candidate=http://127.0.0.1:34797
+time=2026-11-10T04:56:50.364Z level=INFO msg="phase started" run_id=c5c16e913a05bb81 phase=functional scenarios=1 concurrency=4
+time=2026-11-10T04:56:50.366Z level=INFO msg="scenario checked" run_id=c5c16e913a05bb81 phase=functional scenario=get-user behavior=FAIL
+time=2026-11-10T04:56:50.366Z level=INFO msg="phase finished" run_id=c5c16e913a05bb81 phase=functional duration_ms=1.998 requests=4
+time=2026-11-10T04:56:50.366Z level=INFO msg="run finished" run_id=c5c16e913a05bb81 outcome=FAIL duration_ms=2.035 requests=4 canceled=false
+Observed exit code: 1
+
+Verified: harmless JSON reordering passes; removal of /email blocks the release.

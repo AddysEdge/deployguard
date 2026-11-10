@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "deployguard",
+    "version": "v0.1.0"
+  },
+  "run": {
+    "id": "c5c16e913a05bb81",
+    "started_at": "2026-11-10T04:56:50.364287089Z",
+    "finished_at": "2026-11-10T04:56:50.366321938Z",
+    "duration_ms": 2.035,
+    "canceled": false,
+    "config_path": "/home/runner/work/_temp/demo/workload.yaml",
+    "config_version": 1,
+    "baseline": "http://127.0.0.1:45975",
+    "candidate": "http://127.0.0.1:34797",
+    "planned_requests": 4,
+    "issued_requests": 4
+  },
+  "settings": {
+    "timeout_ms": 2000,
+    "max_response_bytes": 1048576,
+    "concurrency": 4,
+    "max_total_requests": 100
+  },
+  "outcome": "FAIL",
+  "exit_code": 1,
+  "summary": {
+    "total": 1,
+    "pass": 0,
+    "warn": 0,
+    "fail": 1,
+    "inconclusive": 0
+  },
+  "reasons": [
+    "get-user FAIL: behavior FAIL: field_removed /email"
+  ],
+  "scenarios": [
+    {
+      "name": "get-user",
+      "method": "GET",
+      "path": "/api/users/42",
+      "outcome": "FAIL",
+      "behavior": {
+        "outcome": "FAIL",
+        "reasons": [
+          "candidate differs from baseline: 1 FAIL and 0 WARN finding(s)"
+        ],
+        "strict_additions": false,
+        "observations": [
+          {
+            "sequence": 1,
+            "target": "baseline",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 0.68
+          },
+          {
+            "sequence": 2,
+            "target": "candidate",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 9,
+            "duration_ms": 0.557
+          },
+          {
+            "sequence": 3,
+            "target": "baseline",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 0.266
+          },
+          {
+            "sequence": 4,
+            "target": "candidate",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 9,
+            "duration_ms": 0.33
+          }
+        ],
+        "findings": [
+          {
+            "category": "field_removed",
+            "path": "/email",
+            "severity": "FAIL",
+            "baseline": "string",
+            "candidate": "missing"
+          }
+        ],
+        "findings_omitted": 0,
+        "finding_counts": {
+          "total": 1,
+          "fail": 1,
+          "warn": 0,
+          "retained": 1,
+          "omitted": 0,
+          "omitted_fail": 0,
+          "omitted_warn": 0
+        },
+        "ignore_rules": []
+      },
+      "performance": {
+        "outcome": "SKIPPED",
+        "reasons": [
+          "not configured for this scenario"
+        ]
+      }
+    }
+  ]
+}

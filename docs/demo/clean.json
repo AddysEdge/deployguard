@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "deployguard",
+    "version": "v0.1.0"
+  },
+  "run": {
+    "id": "3954f79fa59e3663",
+    "started_at": "2026-11-10T04:56:50.351719322Z",
+    "finished_at": "2026-11-10T04:56:50.358447445Z",
+    "duration_ms": 6.728,
+    "canceled": false,
+    "config_path": "/home/runner/work/_temp/demo/workload.yaml",
+    "config_version": 1,
+    "baseline": "http://127.0.0.1:45975",
+    "candidate": "http://127.0.0.1:34797",
+    "planned_requests": 4,
+    "issued_requests": 4
+  },
+  "settings": {
+    "timeout_ms": 2000,
+    "max_response_bytes": 1048576,
+    "concurrency": 4,
+    "max_total_requests": 100
+  },
+  "outcome": "PASS",
+  "exit_code": 0,
+  "summary": {
+    "total": 1,
+    "pass": 1,
+    "warn": 0,
+    "fail": 0,
+    "inconclusive": 0
+  },
+  "reasons": [
+    "no scenario failed or was inconclusive (1 PASS, 0 WARN); WARN does not block release"
+  ],
+  "scenarios": [
+    {
+      "name": "get-user",
+      "method": "GET",
+      "path": "/api/users/42",
+      "outcome": "PASS",
+      "behavior": {
+        "outcome": "PASS",
+        "reasons": [
+          "candidate matched baseline (status 200, application/json)"
+        ],
+        "strict_additions": false,
+        "observations": [
+          {
+            "sequence": 1,
+            "target": "baseline",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 3.796
+          },
+          {
+            "sequence": 2,
+            "target": "candidate",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 2.084
+          },
+          {
+            "sequence": 3,
+            "target": "baseline",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 0.311
+          },
+          {
+            "sequence": 4,
+            "target": "candidate",
+            "status": 200,
+            "media_type": "application/json",
+            "body_bytes": 40,
+            "duration_ms": 0.266
+          }
+        ],
+        "findings": null,
+        "findings_omitted": 0,
+        "finding_counts": {
+          "total": 0,
+          "fail": 0,
+          "warn": 0,
+          "retained": 0,
+          "omitted": 0,
+          "omitted_fail": 0,
+          "omitted_warn": 0
+        },
+        "ignore_rules": []
+      },
+      "performance": {
+        "outcome": "SKIPPED",
+        "reasons": [
+          "not configured for this scenario"
+        ]
+      }
+    }
+  ]
+}

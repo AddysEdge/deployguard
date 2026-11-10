@@ -1,0 +1,24 @@
+{
+  "recordedAt": "2026-11-10T04:56:50.368Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "version": "deployguard v0.1.0",
+  "binarySha256": "532d69d0c7af95f006e042fd3a6b7fccd4f3eba55e3d9a4ff34cc98f96517852",
+  "workflowRun": "https://github.com/AddysEdge/deployguard/actions/runs/42758992185",
+  "scriptCommit": "5ebd883aeb6b1902b1b88e2d3aad076c49069f4e",
+  "scope": "Two synthetic loopback cases against the executable passed with --binary; not a production benchmark.",
+  "cases": [
+    {
+      "name": "clean",
+      "exitCode": 0,
+      "outcome": "PASS",
+      "report": "clean.json"
+    },
+    {
+      "name": "regressed",
+      "exitCode": 1,
+      "outcome": "FAIL",
+      "report": "regressed.json"
+    }
+  ]
+}

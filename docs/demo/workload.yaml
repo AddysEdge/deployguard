@@ -1,0 +1,8 @@
+version: 1
+settings:
+  timeout: 2s
+  max_total_requests: 100
+scenarios:
+  - name: get-user
+    method: GET
+    path: /api/users/42

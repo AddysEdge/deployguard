@@ -11,20 +11,18 @@
 
 It is a single Go CLI meant for a CI release gate. You describe a small, versioned GET/HEAD workload in YAML, point it at two controlled environments, and get a terminal summary, a versioned JSON report, and an exit code that a pipeline can act on.
 
-```text
-FAIL         get-user         GET /api/users/42
-  behavior     FAIL         candidate differs from baseline: 1 FAIL and 0 WARN finding(s)
-               FAIL field_removed        /email string -> missing
-  performance  SKIPPED      not configured for this scenario
-...
-FAIL         search           GET /api/search
-  behavior     PASS         candidate matched baseline (status 200, application/json)
-  performance  FAIL         p95 latency regression repeated in all 2 rounds (gate: fail)
-               round 1 baseline->candidate  p95 2.5ms -> 123.5ms  delta +121.0ms (+4798.1%)  n=100/100 ok, errors 0/0  [breach]
-               round 2 candidate->baseline  p95 5.2ms -> 129.4ms  delta +124.2ms (+2384.5%)  n=100/100 ok, errors 0/0  [breach]
+## Recorded demo
 
-Result: FAIL (exit code 1)
-```
+![Recorded output from the published binary on synthetic APIs](docs/demo/terminal.svg)
+
+The actual release executable passes harmless JSON key reordering and blocks a removed field.
+This image shows selected recorded output with long lines wrapped; the complete
+[transcript](docs/demo/transcript.txt), [reports and provenance](docs/demo/README.md)
+are committed beside it. These two synthetic cases are not a production benchmark.
+
+[Run the demo yourself](docs/downloads.md) ·
+[Cross-platform verification](https://github.com/AddysEdge/deployguard/actions/runs/42758992185) ·
+[Report setup feedback](https://github.com/AddysEdge/deployguard/issues/new?template=try-it.yml)
 
 ### What it is not
 

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1048" height="974" viewBox="0 0 1048 974">
+<title>DeployGuard: recorded output from the published binary on synthetic fixtures</title>
+<rect width="100%" height="100%" rx="12" fill="#0f172a"/>
+<g font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="16">
+<text x="24" y="32" fill="#f8fafc">DeployGuard · recorded CLI output</text>
+<text x="24" y="56" fill="#94a3b8">Synthetic demo · wrapped output excerpt · full INFO logs in transcript.txt</text>
+<text x="24" y="86" fill="#93c5fd">$ deployguard version</text>
+<text x="24" y="108" fill="#e2e8f0">deployguard v0.1.0</text>
+<text x="24" y="130" fill="#e2e8f0"></text>
+<text x="24" y="152" fill="#93c5fd">$ deployguard compare  # clean synthetic candidate</text>
+<text x="24" y="174" fill="#e2e8f0">DeployGuard v0.1.0  run 3954f79fa59e3663</text>
+<text x="24" y="196" fill="#e2e8f0">  baseline   http://127.0.0.1:45975</text>
+<text x="24" y="218" fill="#e2e8f0">  candidate  http://127.0.0.1:34797</text>
+<text x="24" y="240" fill="#e2e8f0">  workload   /home/runner/work/_temp/demo/workload.yaml: 1 scenario(s), 4 request(s) planned, 4 issu</text>
+<text x="24" y="262" fill="#e2e8f0">ed, 0.0s</text>
+<text x="24" y="284" fill="#e2e8f0"></text>
+<text x="24" y="306" fill="#86efac">PASS         get-user  GET /api/users/42</text>
+<text x="24" y="328" fill="#86efac">  behavior     PASS         candidate matched baseline (status 200, application/json)</text>
+<text x="24" y="350" fill="#e2e8f0">  performance  SKIPPED      not configured for this scenario</text>
+<text x="24" y="372" fill="#e2e8f0"></text>
+<text x="24" y="394" fill="#86efac">Result: PASS (exit code 0)</text>
+<text x="24" y="416" fill="#fda4af">  0 FAIL, 0 INCONCLUSIVE, 0 WARN, 1 PASS</text>
+<text x="24" y="438" fill="#86efac">  - no scenario failed or was inconclusive (1 PASS, 0 WARN); WARN does not block release</text>
+<text x="24" y="460" fill="#e2e8f0">Report: /home/runner/work/_temp/demo/clean.json</text>
+<text x="24" y="482" fill="#e2e8f0">Observed exit code: 0</text>
+<text x="24" y="504" fill="#e2e8f0"></text>
+<text x="24" y="526" fill="#93c5fd">$ deployguard compare  # regressed synthetic candidate</text>
+<text x="24" y="548" fill="#e2e8f0">DeployGuard v0.1.0  run c5c16e913a05bb81</text>
+<text x="24" y="570" fill="#e2e8f0">  baseline   http://127.0.0.1:45975</text>
+<text x="24" y="592" fill="#e2e8f0">  candidate  http://127.0.0.1:34797</text>
+<text x="24" y="614" fill="#e2e8f0">  workload   /home/runner/work/_temp/demo/workload.yaml: 1 scenario(s), 4 request(s) planned, 4 issu</text>
+<text x="24" y="636" fill="#e2e8f0">ed, 0.0s</text>
+<text x="24" y="658" fill="#e2e8f0"></text>
+<text x="24" y="680" fill="#fda4af">FAIL         get-user  GET /api/users/42</text>
+<text x="24" y="702" fill="#fda4af">  behavior     FAIL         candidate differs from baseline: 1 FAIL and 0 WARN finding(s)</text>
+<text x="24" y="724" fill="#fda4af">               FAIL field_removed        /email string -&gt; missing</text>
+<text x="24" y="746" fill="#e2e8f0">  performance  SKIPPED      not configured for this scenario</text>
+<text x="24" y="768" fill="#e2e8f0"></text>
+<text x="24" y="790" fill="#fda4af">Result: FAIL (exit code 1)</text>
+<text x="24" y="812" fill="#fda4af">  1 FAIL, 0 INCONCLUSIVE, 0 WARN, 0 PASS</text>
+<text x="24" y="834" fill="#fda4af">  - get-user FAIL: behavior FAIL: field_removed /email</text>
+<text x="24" y="856" fill="#e2e8f0">Report: /home/runner/work/_temp/demo/regressed.json</text>
+<text x="24" y="878" fill="#fda4af">Observed exit code: 1</text>
+<text x="24" y="900" fill="#e2e8f0"></text>
+<text x="24" y="922" fill="#86efac">Verified: harmless JSON reordering passes; removal of /email blocks the release.</text>
+</g></svg>
